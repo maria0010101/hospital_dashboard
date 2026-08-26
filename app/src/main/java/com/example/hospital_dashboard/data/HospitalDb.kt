@@ -42,6 +42,7 @@ class HospitalDb(context: Context) {
                     .drop(1)                                     // 捨棄表頭列
                     .map { row -> row.take(config.columns.size) } // 只取前 N 欄
                     .filter { row -> row.any { !it.isNullOrEmpty() } } // dropna(how="all")
+                    .map { row -> config.derive?.invoke(row) ?: row } // 衍生欄位(如 ym→year/month)
                 importTable(config, rows)
                 onProgress(config.sheet, rows.size, idx, total)
             }
@@ -99,15 +100,31 @@ class HospitalDb(context: Context) {
         }
     }
 
-    fun hasImportedData(): Boolean =
-        getMeta("imported_at") != null
+    fun hasImportedData(): Boolean {
+        if (getMeta("imported_at") == null) return false
+        // 所有目標表都必須存在：舊版資料庫缺少新表(如 physician_service)時視為未匯入，
+        // 避免 tableRowCounts / 查詢對不存在的表崩潰。
+        val tables = SheetConfigs.ALL.map { it.table }
+        val ph = tables.joinToString(",") { "?" }
+        val found = db.rawQuery(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ($ph)",
+            tables.toTypedArray()
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        return found == tables.size
+    }
 
-    /** 各表筆數(供匯入完成頁顯示)。 */
+    /** 各表筆數(供匯入完成頁顯示；表不存在時回 0)。 */
     fun tableRowCounts(): List<Pair<String, Long>> {
         return SheetConfigs.ALL.map { cfg ->
-            db.rawQuery("SELECT COUNT(*) FROM \"${cfg.table}\"", null).use { c ->
-                cfg.table to if (c.moveToFirst()) c.getLong(0) else 0L
-            }
+            val exists = db.rawQuery(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                arrayOf(cfg.table)
+            ).use { c -> if (c.moveToFirst()) c.getInt(0) > 0 else false }
+            cfg.table to if (exists) {
+                db.rawQuery("SELECT COUNT(*) FROM \"${cfg.table}\"", null).use { c ->
+                    if (c.moveToFirst()) c.getLong(0) else 0L
+                }
+            } else 0L
         }
     }
 

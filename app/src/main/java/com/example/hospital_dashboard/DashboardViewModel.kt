@@ -133,23 +133,38 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             .map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
     }
 
+    /** 院區選項：統一以「院區名稱」(branch_name) 跨表聯集(各表資料關聯欄位)。 */
     fun availableBranches(): List<String> {
-        return db.query("SELECT DISTINCT branch FROM outpatient_service WHERE branch IS NOT NULL ORDER BY branch")
-            .map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
+        return db.query(
+            """SELECT branch_name FROM outpatient_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM inpatient_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM bed_type_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM offsite_clinic_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM accounting_report WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM ops_management_indicators WHERE branch_name IS NOT NULL AND branch_name != ''
+               ORDER BY branch_name"""
+        ).map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
     }
 
+    /** 部別選項：各表格「編制部別」(dept_div) 內容跨表聯集。 */
     fun availableDeptDivs(): List<String> {
-        return db.query("SELECT DISTINCT dept_div FROM outpatient_service WHERE dept_div IS NOT NULL ORDER BY dept_div")
-            .map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
+        val cond = "dept_div IS NOT NULL AND dept_div != '' AND dept_div NOT IN ('#N/A','NULL')"
+        return db.query(
+            """SELECT DISTINCT dept_div FROM outpatient_service WHERE $cond
+               UNION SELECT DISTINCT dept_div FROM inpatient_service WHERE $cond
+               UNION SELECT DISTINCT dept_div FROM physician_service WHERE $cond
+               ORDER BY dept_div"""
+        ).map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
     }
 
+    /** 科別選項：跨表聯集；指定部別時只列該部別之科別。 */
     fun availableDepts(divs: List<String>? = null): List<String> {
-        val sql = if (divs.isNullOrEmpty()) {
-            "SELECT DISTINCT dept FROM outpatient_service WHERE dept IS NOT NULL ORDER BY dept"
-        } else {
-            val ph = divs.joinToString(",") { "?" }
-            "SELECT DISTINCT dept FROM outpatient_service WHERE dept IS NOT NULL AND dept_div IN ($ph) ORDER BY dept"
-        }
+        val divCond = if (divs.isNullOrEmpty()) "" else "AND dept_div IN (${divs.joinToString(",") { "?" }})"
+        val sql = """SELECT DISTINCT dept FROM (
+            SELECT dept, dept_div FROM outpatient_service WHERE dept IS NOT NULL AND dept != ''
+            UNION ALL SELECT dept, dept_div FROM physician_service WHERE dept IS NOT NULL AND dept != ''
+            UNION ALL SELECT dept, dept_div FROM inpatient_service WHERE dept IS NOT NULL AND dept != ''
+        ) WHERE 1=1 $divCond ORDER BY dept"""
         return db.query(sql, if (divs.isNullOrEmpty()) emptyArray() else divs.toTypedArray())
             .map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
     }

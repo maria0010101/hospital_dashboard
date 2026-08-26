@@ -30,7 +30,7 @@ class DashboardRepo(private val db: HospitalDb) {
             params.addAll(f.months)
         }
         if (f.branches.isNotEmpty()) {
-            parts.add("branch IN (${f.branches.joinToString(",") { "?" }})")
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
             params.addAll(f.branches)
         }
         if (withDept) {
@@ -193,20 +193,20 @@ class DashboardRepo(private val db: HospitalDb) {
     private fun monthBranchMap(year: String, month: String): Map<String, BranchMonthStat> {
         val opdRows = db.query(
             "SELECT branch, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)) " +
-                "FROM outpatient_service WHERE year=? AND month=? GROUP BY branch",
+                "FROM outpatient_service WHERE year=? AND month=? GROUP BY branch_name",
             arrayOf(year, month)
         )
         val ipdRows = db.query(
-            "SELECT branch, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
-                "FROM inpatient_service WHERE year=? AND month=? GROUP BY branch",
+            "SELECT branch_name, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
+                "FROM inpatient_service WHERE year=? AND month=? GROUP BY branch_name",
             arrayOf(year, month)
         )
         val bedRows = db.query(
-            """SELECT branch, ${avgCast("actual_occupancy_rate")} FROM bed_type_service
+            """SELECT branch_name, ${avgCast("actual_occupancy_rate")} FROM bed_type_service
                WHERE (major_category IS NULL OR major_category != '其他')
                  AND actual_occupancy_rate IS NOT NULL
                  AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?
-               GROUP BY branch""",
+               GROUP BY branch_name""",
             arrayOf(year, month)
         )
         val result = LinkedHashMap<String, BranchMonthStat>()
@@ -262,11 +262,11 @@ class DashboardRepo(private val db: HospitalDb) {
     fun opdMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
         val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
-        val sql = """SELECT year, month, branch,
+        val sql = """SELECT year, month, branch_name,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, branch"""
-        val yoy = if (f.showYoy) """SELECT year, month, branch, SUM(CAST(opd_visit_count AS REAL))
-            FROM outpatient_service WHERE $wy GROUP BY year, month, branch""" else null
+            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
+        val yoy = if (f.showYoy) """SELECT year, month, branch_name, SUM(CAST(opd_visit_count AS REAL))
+            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
             yoySql = yoy, yoyParams = if (f.showYoy) py else emptyArray())
     }
@@ -274,9 +274,9 @@ class DashboardRepo(private val db: HospitalDb) {
     /** 急診人次月趨勢(依院區)，僅 er>0 的點。 */
     fun erMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
-        val sql = """SELECT year, month, branch,
+        val sql = """SELECT year, month, branch_name,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, branch"""
+            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(5),
             keepPoint = { num(it[5])?.let { v -> v > 0 } ?: false })
     }
@@ -324,8 +324,8 @@ class DashboardRepo(private val db: HospitalDb) {
     fun branchOpdBar(f: Filters): HBarData {
         val (w, p) = whereFor(f, true, 0)
         val rows = db.query(
-            "SELECT branch, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
-                "WHERE $w GROUP BY branch", p)
+            "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
+                "WHERE $w GROUP BY branch_name", p)
         val items = rows.mapNotNull { r ->
             num(r[1])?.let { v -> if (v > 0) r[0]?.toString()?.let { it to v } else null }
         }.sortedBy { it.second }
@@ -335,10 +335,10 @@ class DashboardRepo(private val db: HospitalDb) {
     // ══════════ TAB2 住院服務 ════════════════════════
     private fun ipdSql(f: Filters, offset: Int): Pair<String, Array<Any?>> {
         val (w, p) = whereFor(f, true, offset)
-        return """SELECT year, month, branch,
+        return """SELECT year, month, branch_name,
             SUM(CAST(admission_count AS REAL)), SUM(CAST(discharge_count AS REAL)),
             SUM(CAST(admission_days AS REAL)), SUM(CAST(discharge_days AS REAL))
-            FROM inpatient_service WHERE $w GROUP BY year, month, branch""" to p
+            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name""" to p
     }
 
     fun ipdMonthly(f: Filters): LineChartData {
@@ -372,7 +372,7 @@ class DashboardRepo(private val db: HospitalDb) {
         val (w, p) = whereFor(f, true, 0)
         val rows = db.query(
             "SELECT branch, SUM(CAST(admission_count AS REAL)) FROM inpatient_service " +
-                "WHERE $w GROUP BY branch", p)
+                "WHERE $w GROUP BY branch_name", p)
         val items = rows.mapNotNull { r ->
             num(r[1])?.let { v -> if (v > 0) r[0]?.toString()?.let { it to v } else null }
         }.sortedBy { it.second }
@@ -391,14 +391,14 @@ class DashboardRepo(private val db: HospitalDb) {
         if (w.isEmpty()) return emptyList()
         val (wp, pp) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
         val cur = db.query(
-            "SELECT branch, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
-                "FROM inpatient_service WHERE $w AND dept=? GROUP BY branch",
+            "SELECT branch_name, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
+                "FROM inpatient_service WHERE $w AND dept=? GROUP BY branch_name",
             arrayOf(*p, dept)
         )
         val prior = if (f.showYoy && wp.isNotEmpty()) {
             db.query(
-                "SELECT branch, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
-                    "FROM inpatient_service WHERE $wp AND dept=? GROUP BY branch",
+                "SELECT branch_name, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
+                    "FROM inpatient_service WHERE $wp AND dept=? GROUP BY branch_name",
                 arrayOf(*pp, dept)
             )
         } else emptyList()
@@ -433,14 +433,14 @@ class DashboardRepo(private val db: HospitalDb) {
         if (w.isEmpty()) return emptyList()
         val (wp, pp) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
         val cur = db.query(
-            "SELECT branch, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
-                "FROM outpatient_service WHERE $w AND dept=? GROUP BY branch",
+            "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE $w AND dept=? GROUP BY branch_name",
             arrayOf(*p, dept)
         )
         val prior = if (f.showYoy && wp.isNotEmpty()) {
             db.query(
-                "SELECT branch, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
-                    "FROM outpatient_service WHERE $wp AND dept=? GROUP BY branch",
+                "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                    "FROM outpatient_service WHERE $wp AND dept=? GROUP BY branch_name",
                 arrayOf(*pp, dept)
             )
         } else emptyList()
@@ -468,13 +468,13 @@ class DashboardRepo(private val db: HospitalDb) {
         val (wp, pp) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
         val cur = db.query(
             "SELECT dept, SUM(CAST(opd_visit_count AS REAL)) " +
-                "FROM outpatient_service WHERE $w AND branch=? GROUP BY dept",
+                "FROM outpatient_service WHERE $w AND branch_name=? GROUP BY dept",
             arrayOf(*p, branch)
         )
         val prior = if (f.showYoy && wp.isNotEmpty()) {
             db.query(
                 "SELECT dept, SUM(CAST(opd_visit_count AS REAL)) " +
-                    "FROM outpatient_service WHERE $wp AND branch=? GROUP BY dept",
+                    "FROM outpatient_service WHERE $wp AND branch_name=? GROUP BY dept",
                 arrayOf(*pp, branch)
             )
         } else emptyList()
@@ -501,9 +501,9 @@ class DashboardRepo(private val db: HospitalDb) {
         val (w, p) = whereFor(f, true, 0)
         if (w.isEmpty()) return emptyList()
         val rows = db.query(
-            "SELECT branch, SUM(CAST(first_visit_count AS REAL)), " +
+            "SELECT branch_name, SUM(CAST(first_visit_count AS REAL)), " +
                 "SUM(CAST(return_visit_count AS REAL)), SUM(CAST(lhy_first_visit AS REAL)) " +
-                "FROM outpatient_service WHERE $w GROUP BY branch", p)
+                "FROM outpatient_service WHERE $w GROUP BY branch_name", p)
         return rows.map { r ->
             BranchFirstVisitStat(
                 branch = r[0]?.toString() ?: "",
@@ -582,8 +582,8 @@ class DashboardRepo(private val db: HospitalDb) {
         val (cc, cp) = catCond(cats)
         val where = if (cc.isEmpty()) w else "$w AND $cc"
         val rows = db.query(
-            "SELECT branch, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
-                "FROM bed_type_service WHERE $where GROUP BY branch", arrayOf(*p, *cp))
+            "SELECT branch_name, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
+                "FROM bed_type_service WHERE $where GROUP BY branch_name", arrayOf(*p, *cp))
         val items = rows.mapNotNull { r ->
             val occ = num(r[1])?.times(100.0) ?: 0.0
             val open = num(r[2]) ?: 0.0
@@ -668,7 +668,7 @@ class DashboardRepo(private val db: HospitalDb) {
             where += " AND nursing_station IN (${ns.joinToString(",") { "?" }})"
             params.addAll(ns)
         }
-        val idxCol = if (byStation) "nursing_station" else "branch"
+        val idxCol = if (byStation) "nursing_station" else "branch_name"
         val rows = db.query(
             "SELECT $idxCol, category, ${avgCast("actual_occupancy_rate")} " +
                 "FROM bed_type_service WHERE $where GROUP BY $idxCol, category", params.toTypedArray())
@@ -802,8 +802,8 @@ class DashboardRepo(private val db: HospitalDb) {
     fun branchIncome(f: Filters): HBarData {
         val (w, p) = whereFor(f, false, 0)
         val rows = db.query(
-            "SELECT branch, SUM(CAST(total_income_opd AS REAL)), SUM(CAST(total_income_admission AS REAL)) " +
-                "FROM ops_management_indicators WHERE $w GROUP BY branch", p)
+            "SELECT branch_name, SUM(CAST(total_income_opd AS REAL)), SUM(CAST(total_income_admission AS REAL)) " +
+                "FROM ops_management_indicators WHERE $w GROUP BY branch_name", p)
         val items = rows.mapNotNull { r ->
             val o = num(r[1]) ?: 0.0
             val a = num(r[2]) ?: 0.0
@@ -817,13 +817,13 @@ class DashboardRepo(private val db: HospitalDb) {
         val (w, p) = whereFor(f, false, 0)
         if (w.isEmpty()) return emptyList()
         val rows = db.query(
-            """SELECT COALESCE(branch,'未分類'), COALESCE(major_category,'未分類'),
+            """SELECT COALESCE(branch_name,'未分類'), COALESCE(major_category,'未分類'),
                COALESCE(category,'未分類'), COALESCE(nursing_station,'未分類'),
                SUM(CAST(registered_beds AS REAL)), SUM(CAST(actual_open_beds AS REAL)),
                SUM(CAST(admission_days AS REAL)),
                ${avgCast("registered_occupancy_rate")}, ${avgCast("actual_occupancy_rate")}
                FROM bed_type_service WHERE $w
-               GROUP BY branch, major_category, category, nursing_station""", p)
+               GROUP BY branch_name, major_category, category, nursing_station""", p)
         val yoy = bedDetailYoy(f)
         return rows.map { r ->
             val key = listOf(r[0], r[1], r[2], r[3])
@@ -845,15 +845,362 @@ class DashboardRepo(private val db: HospitalDb) {
         val (w, p) = whereFor(f, false, -1)
         if (w.isEmpty()) return emptyMap()
         val rows = db.query(
-            """SELECT COALESCE(branch,'未分類'), COALESCE(major_category,'未分類'),
+            """SELECT COALESCE(branch_name,'未分類'), COALESCE(major_category,'未分類'),
                COALESCE(category,'未分類'), COALESCE(nursing_station,'未分類'),
                ${avgCast("registered_occupancy_rate")}, ${avgCast("actual_occupancy_rate")}
                FROM bed_type_service WHERE $w
-               GROUP BY branch, major_category, category, nursing_station""", p)
+               GROUP BY branch_name, major_category, category, nursing_station""", p)
         return rows.associate { r ->
             listOf(r[0], r[1], r[2], r[3]) to
                 (num(r[4])?.times(100.0) to num(r[5])?.times(100.0))
         }
+    }
+
+    // ══════════ 錨點月份(近三個月/去年同期基準) ═══════════
+    /** 篩選年度範圍內的最新一個月(民國年, 月)；年度為空則取全部資料最新月。 */
+    fun anchorYm(f: Filters): Pair<Int, Int>? {
+        val sql = if (f.years.isEmpty()) {
+            "SELECT year, month FROM outpatient_service ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1"
+        } else {
+            "SELECT year, month FROM outpatient_service WHERE year IN (${f.years.joinToString(",") { "?" }})" +
+                " ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1"
+        }
+        val r = db.query(sql, if (f.years.isEmpty()) emptyArray() else f.years.toTypedArray()).firstOrNull()
+            ?: return null
+        val y = r[0]?.toString()?.toIntOrNull() ?: return null
+        val m = r[1]?.toString()?.toIntOrNull() ?: return null
+        return y to m
+    }
+
+    /** 由錨點往回推 k 個月(跨年正確處理)。 */
+    private fun monthBack(y: Int, m: Int, k: Int): Pair<Int, Int> {
+        val ym = y * 12 + (m - 1) - k
+        return (ym / 12) to (ym % 12 + 1)
+    }
+
+    /** 錨點起最近 3 個月(由舊到新)。 */
+    fun recent3Yms(f: Filters): List<Pair<Int, Int>> {
+        val a = anchorYm(f) ?: return emptyList()
+        return listOf(monthBack(a.first, a.second, 2), monthBack(a.first, a.second, 1), a)
+    }
+
+    /** (year, month) IN ((?,?),(?,?)) 條件與參數。 */
+    private fun ymInCond(yms: List<Pair<Int, Int>>): Pair<String, Array<Any?>> {
+        if (yms.isEmpty()) return "" to emptyArray()
+        val ph = yms.joinToString(",") { "(?,?)" }
+        val params = mutableListOf<Any?>()
+        yms.forEach { (y, m) -> params.add(y.toString()); params.add(m.toString()) }
+        return "(year, month) IN ($ph)" to params.toTypedArray()
+    }
+
+    // ══════════ TAB6 醫師服務量 ═══════════════════════
+    /** 醫師服務量表(physician_service)專用篩選條件。capAnchor=true 時限制在錨點月以內(排除部分月份)。 */
+    private fun physWhere(f: Filters, offset: Int, capAnchor: Boolean = true): Pair<String, Array<Any?>> {
+        val parts = mutableListOf<String>()
+        val params = mutableListOf<Any?>()
+        val years = f.years.mapNotNull { it.toIntOrNull()?.plus(offset)?.toString() }
+        if (years.isEmpty()) return "" to emptyArray()
+        parts.add("year IN (${years.joinToString(",") { "?" }})")
+        params.addAll(years)
+        if (f.months.isNotEmpty()) {
+            parts.add("month IN (${f.months.joinToString(",") { "?" }})")
+            params.addAll(f.months)
+        }
+        if (f.branches.isNotEmpty()) {
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+            params.addAll(f.branches)
+        }
+        if (f.deptDivs.isNotEmpty()) {
+            parts.add("dept_div IN (${f.deptDivs.joinToString(",") { "?" }})")
+            params.addAll(f.deptDivs)
+        }
+        if (f.depts.isNotEmpty()) {
+            parts.add("dept IN (${f.depts.joinToString(",") { "?" }})")
+            params.addAll(f.depts)
+        }
+        if (capAnchor && offset == 0) {
+            anchorYm(f)?.let { (ay, am) ->
+                parts.add("(CAST(year AS INTEGER) < ? OR (CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) <= ?))")
+                params.add(ay.toString()); params.add(ay.toString()); params.add(am.toString())
+            }
+        }
+        return parts.joinToString(" AND ") to params.toTypedArray()
+    }
+
+    /** 科別彙總資料(門診/急診/住院人次/住院人日)。 */
+    class PhysDeptVol(
+        val dept: String,
+        val opd: Double, val er: Double, val adm: Double, val days: Double
+    )
+
+    fun physDeptVolumes(f: Filters): List<PhysDeptVol> {
+        val (w, p) = physWhere(f, 0)
+        if (w.isEmpty()) return emptyList()
+        val rows = db.query(
+            """SELECT dept,
+               SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)),
+               SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL))
+               FROM physician_service WHERE $w GROUP BY dept""", p)
+        return rows.mapNotNull { r ->
+            val dept = r[0]?.toString()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val v = PhysDeptVol(dept, num(r[1]) ?: 0.0, num(r[2]) ?: 0.0, num(r[3]) ?: 0.0, num(r[4]) ?: 0.0)
+            if (v.opd + v.er + v.adm + v.days > 0) v else null
+        }
+    }
+
+    /** 單一科別醫師服務量(依門診人次降冪)。 */
+    class PhysDoctorStat(
+        val doctorName: String,
+        val sessions: Double, val opd: Double, val er: Double, val adm: Double, val days: Double
+    )
+
+    fun physDoctorsForDept(f: Filters, dept: String, limit: Int = 60): List<PhysDoctorStat> {
+        val (w, p) = physWhere(f, 0)
+        if (w.isEmpty()) return emptyList()
+        val rows = db.query(
+            """SELECT doctor_id, doctor_name,
+               SUM(CAST(sessions AS REAL)), SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)),
+               SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL))
+               FROM physician_service WHERE $w AND dept=? GROUP BY doctor_id, doctor_name""",
+            arrayOf(*p, dept))
+        return rows.mapNotNull { r ->
+            val id = r[0]?.toString() ?: ""
+            val name = r[1]?.toString()?.takeIf { it.isNotEmpty() } ?: id
+            val s = PhysDoctorStat(name, num(r[2]) ?: 0.0, num(r[3]) ?: 0.0, num(r[4]) ?: 0.0,
+                num(r[5]) ?: 0.0, num(r[6]) ?: 0.0)
+            if (s.opd + s.er + s.adm + s.days + s.sessions > 0) s else null
+        }.sortedByDescending { it.opd }.take(limit)
+    }
+
+    /** 單一月份的科別指標。 */
+    class PhysTrend(val ym: Int, val opd: Double, val er: Double, val adm: Double, val days: Double)
+
+    /** 單一科別最近三個月各指標(由舊到新)。 */
+    fun physDeptTrend3(f: Filters, dept: String): List<PhysTrend> {
+        val yms = recent3Yms(f)
+        if (yms.isEmpty()) return emptyList()
+        val (yc, yp) = ymInCond(yms)
+        val parts = mutableListOf("$yc AND dept=?")
+        val params = mutableListOf<Any?>(); params.addAll(yp); params.add(dept)
+        if (f.branches.isNotEmpty()) {
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+            params.addAll(f.branches)
+        }
+        val w = parts.joinToString(" AND ")
+        val rows = db.query(
+            """SELECT year, month,
+               SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)),
+               SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL))
+               FROM physician_service WHERE $w GROUP BY year, month""", params.toTypedArray())
+        val map = rows.associate { r ->
+            val y = r[0]?.toString()?.toIntOrNull() ?: 0
+            val m = r[1]?.toString()?.toIntOrNull() ?: 0
+            (y * 100 + m) to PhysTrend(y * 100 + m, num(r[2]) ?: 0.0, num(r[3]) ?: 0.0,
+                num(r[4]) ?: 0.0, num(r[5]) ?: 0.0)
+        }
+        return yms.map { (y, m) -> map[y * 100 + m] ?: PhysTrend(y * 100 + m, 0.0, 0.0, 0.0, 0.0) }
+    }
+
+    /** 單一科別去年同期(錨點月 vs 去年同月)。 */
+    fun physDeptYoy(f: Filters, dept: String): Pair<PhysTrend?, PhysTrend?> {
+        val a = anchorYm(f) ?: return null to null
+        val prior = monthBack(a.first, a.second, 12)
+        fun monthStat(y: Int, m: Int): PhysTrend? {
+            val parts = mutableListOf("year=? AND month=? AND dept=?")
+            val params = mutableListOf<Any?>(y.toString(), m.toString(), dept)
+            if (f.branches.isNotEmpty()) {
+                parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+                params.addAll(f.branches)
+            }
+            val w = parts.joinToString(" AND ")
+            val r = db.query(
+                """SELECT SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)),
+                   SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL))
+                   FROM physician_service WHERE $w""", params.toTypedArray()).firstOrNull() ?: return null
+            return PhysTrend(y * 100 + m, num(r[0]) ?: 0.0, num(r[1]) ?: 0.0, num(r[2]) ?: 0.0, num(r[3]) ?: 0.0)
+        }
+        return monthStat(a.first, a.second) to monthStat(prior.first, prior.second)
+    }
+
+    // ══════════ TAB7 醫師收入統計 ═══════════════════════
+    /** 全院收入月趨勢(門診/住院 × 健保/自費 堆疊直條)。 */
+    fun physIncomeMonthly(f: Filters): VBarData {
+        val (w, p) = physWhere(f, 0)
+        if (w.isEmpty()) return VBarData.EMPTY
+        val rows = db.query(
+            """SELECT year, month,
+               SUM(CAST(opd_nhi_income AS REAL)), SUM(CAST(opd_selfpay_income AS REAL)),
+               SUM(CAST(ipd_nhi_income AS REAL)), SUM(CAST(ipd_selfpay_income AS REAL))
+               FROM physician_service WHERE $w GROUP BY year, month""", p)
+        val xKeys = rows.map { ymSort(it[0], it[1]) to ymLabel(it[0], it[1]) }.distinct().sortedBy { it.first }
+        return VBarData(xKeys.map { k ->
+            val r = rows.firstOrNull { ymSort(it[0], it[1]) == k.first }
+            VBarGroup(k.second, listOf(
+                BarSegment("門診健保", r?.let { num(it[2]) } ?: 0.0),
+                BarSegment("門診自費", r?.let { num(it[3]) } ?: 0.0),
+                BarSegment("住院健保", r?.let { num(it[4]) } ?: 0.0),
+                BarSegment("住院自費", r?.let { num(it[5]) } ?: 0.0)
+            ))
+        }, stacked = true)
+    }
+
+    /** 當月收入結構(錨點月)：門診/住院 × 健保/自費 圓餅。 */
+    fun physIncomePie(f: Filters): PieData {
+        val a = anchorYm(f) ?: return PieData.EMPTY
+        val parts = mutableListOf("year=? AND month=?")
+        val params = mutableListOf<Any?>(a.first.toString(), a.second.toString())
+        if (f.branches.isNotEmpty()) {
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+            params.addAll(f.branches)
+        }
+        if (f.deptDivs.isNotEmpty()) {
+            parts.add("dept_div IN (${f.deptDivs.joinToString(",") { "?" }})")
+            params.addAll(f.deptDivs)
+        }
+        if (f.depts.isNotEmpty()) {
+            parts.add("dept IN (${f.depts.joinToString(",") { "?" }})")
+            params.addAll(f.depts)
+        }
+        val w = parts.joinToString(" AND ")
+        val r = db.query(
+            """SELECT SUM(CAST(opd_nhi_income AS REAL)), SUM(CAST(opd_selfpay_income AS REAL)),
+               SUM(CAST(ipd_nhi_income AS REAL)), SUM(CAST(ipd_selfpay_income AS REAL))
+               FROM physician_service WHERE $w""", params.toTypedArray()).firstOrNull() ?: return PieData.EMPTY
+        val slices = listOf(
+            PieSlice("門診健保收入", num(r[0]) ?: 0.0),
+            PieSlice("門診自費收入", num(r[1]) ?: 0.0),
+            PieSlice("住院健保收入", num(r[2]) ?: 0.0),
+            PieSlice("住院自費收入", num(r[3]) ?: 0.0)
+        )
+        if (slices.sumOf { it.value } <= 0) return PieData.EMPTY
+        return PieData(slices)
+    }
+
+    /** 單一月份某院區收入(含去年同月)。 */
+    class BranchIncomeStat(
+        val branch: String,
+        val cur: Double, val prior: Double?, val deltaPct: Double?,
+        val trend: List<Double?>, val trendDeltaPct: Double? // 近三個月(由舊到新)與最後一個月增減
+    )
+
+    /** 點擊月份長條 → 各院區收入明細(近三個月趨勢 + 去年同期成長率)。 */
+    fun physBranchIncome(f: Filters, ym: Int): List<BranchIncomeStat> {
+        val y = ym / 100; val m = ym % 100
+        val yms = listOf(monthBack(y, m, 2), monthBack(y, m, 1), y to m)
+        val (yc, yp) = ymInCond(yms)
+        val parts = mutableListOf(yc)
+        val params = mutableListOf<Any?>(); params.addAll(yp)
+        if (f.branches.isNotEmpty()) {
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+            params.addAll(f.branches)
+        }
+        if (f.deptDivs.isNotEmpty()) {
+            parts.add("dept_div IN (${f.deptDivs.joinToString(",") { "?" }})")
+            params.addAll(f.deptDivs)
+        }
+        if (f.depts.isNotEmpty()) {
+            parts.add("dept IN (${f.depts.joinToString(",") { "?" }})")
+            params.addAll(f.depts)
+        }
+        val w = parts.joinToString(" AND ")
+        val incSql = "SUM(CAST(opd_nhi_income AS REAL)) + SUM(CAST(opd_selfpay_income AS REAL)) + " +
+            "SUM(CAST(ipd_nhi_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL))"
+        // 近三個月(排除院外門診部：其收入皆為 0)
+        val rows = db.query(
+            "SELECT branch_name, year, month, $incSql FROM physician_service " +
+                "WHERE $w AND branch_name NOT LIKE '%門診部' GROUP BY branch_name, year, month",
+            params.toTypedArray())
+        val trendMap = HashMap<String, Array<Double?>>()
+        for (r in rows) {
+            val br = r[0]?.toString() ?: continue
+            val ry = r[1]?.toString()?.toIntOrNull() ?: 0
+            val rm = r[2]?.toString()?.toIntOrNull() ?: 0
+            val idx = yms.indexOfFirst { it.first == ry && it.second == rm }
+            if (idx < 0) continue
+            val arr = trendMap.getOrPut(br) { arrayOfNulls<Double>(3) }
+            arr[idx] = num(r[3]) ?: 0.0
+        }
+        // 去年同期(去年同月)
+        val py = y - 1
+        val priorRows = db.query(
+            "SELECT branch_name, $incSql FROM physician_service " +
+                "WHERE year=? AND month=? AND branch_name NOT LIKE '%門診部' " +
+                (if (f.branches.isNotEmpty()) "AND branch_name IN (${f.branches.joinToString(",") { "?" }})" else "") +
+                (if (f.deptDivs.isNotEmpty()) "AND dept_div IN (${f.deptDivs.joinToString(",") { "?" }})" else "") +
+                (if (f.depts.isNotEmpty()) "AND dept IN (${f.depts.joinToString(",") { "?" }})" else "") +
+                " GROUP BY branch_name",
+            buildList {
+                add(py.toString()); add(m.toString())
+                if (f.branches.isNotEmpty()) addAll(f.branches)
+                if (f.deptDivs.isNotEmpty()) addAll(f.deptDivs)
+                if (f.depts.isNotEmpty()) addAll(f.depts)
+            }.toTypedArray())
+        val priorMap = priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        val branches = (trendMap.keys + priorMap.keys).sorted()
+        return branches.map { br ->
+            val trend = trendMap[br]?.toList() ?: listOf(null, null, null)
+            val cur = trend[2] ?: 0.0
+            val prior = priorMap[br]
+            val delta = if (prior != null && prior != 0.0 && cur != 0.0) (cur - prior) / prior * 100.0 else null
+            val prev = trend[1]
+            val trendDelta = if (prev != null && prev != 0.0 && cur != 0.0) (cur - prev) / prev * 100.0 else null
+            BranchIncomeStat(br, cur, prior, delta, trend, trendDelta)
+        }
+    }
+
+    // ══════════ 近三個月趨勢(點擊細項用) ═════════════
+    /** 將 (group, year, month, value) 列轉為 group → 依 yms 對齊的 3 個月數值。 */
+    private fun buildRecentMap(rows: List<List<Any?>>, yms: List<Pair<Int, Int>>, valIdx: Int): Map<String, List<Double?>> {
+        val map = HashMap<String, Array<Double?>>()
+        for (r in rows) {
+            val g = r[0]?.toString() ?: continue
+            val ry = r[1]?.toString()?.toIntOrNull() ?: 0
+            val rm = r[2]?.toString()?.toIntOrNull() ?: 0
+            val idx = yms.indexOfFirst { it.first == ry && it.second == rm }
+            if (idx < 0) continue
+            val arr = map.getOrPut(g) { arrayOfNulls<Double>(yms.size) }
+            arr[idx] = num(r[valIdx])
+        }
+        return map.mapValues { it.value.toList() }
+    }
+
+    /** 科別門診 各院區近三個月門診人次趨勢。 */
+    fun deptOpdBranchRecent3(f: Filters, dept: String): Map<String, List<Double?>> {
+        val yms = recent3Yms(f)
+        if (yms.isEmpty()) return emptyMap()
+        val (yc, yp) = ymInCond(yms)
+        val params = mutableListOf<Any?>(); params.addAll(yp); params.add(dept)
+        val rows = db.query(
+            "SELECT branch_name, year, month, SUM(CAST(opd_visit_count AS REAL)) " +
+                "FROM outpatient_service WHERE $yc AND dept=? GROUP BY branch_name, year, month",
+            params.toTypedArray())
+        return buildRecentMap(rows, yms, 3)
+    }
+
+    /** 院區門診 各科別近三個月門診人次趨勢。 */
+    fun branchOpdDeptRecent3(f: Filters, branch: String): Map<String, List<Double?>> {
+        val yms = recent3Yms(f)
+        if (yms.isEmpty()) return emptyMap()
+        val (yc, yp) = ymInCond(yms)
+        val params = mutableListOf<Any?>(); params.addAll(yp); params.add(branch)
+        val rows = db.query(
+            "SELECT dept, year, month, SUM(CAST(opd_visit_count AS REAL)) " +
+                "FROM outpatient_service WHERE $yc AND branch_name=? GROUP BY dept, year, month",
+            params.toTypedArray())
+        return buildRecentMap(rows, yms, 3)
+    }
+
+    /** 科別住院 各院區近三個月住院人次趨勢。 */
+    fun deptBranchRecent3(f: Filters, dept: String): Map<String, List<Double?>> {
+        val yms = recent3Yms(f)
+        if (yms.isEmpty()) return emptyMap()
+        val (yc, yp) = ymInCond(yms)
+        val params = mutableListOf<Any?>(); params.addAll(yp); params.add(dept)
+        val rows = db.query(
+            "SELECT branch_name, year, month, SUM(CAST(admission_count AS REAL)) " +
+                "FROM inpatient_service WHERE $yc AND dept=? GROUP BY branch_name, year, month",
+            params.toTypedArray())
+        return buildRecentMap(rows, yms, 3)
     }
 
     // ══════════ 色階 ════════════════════════════════

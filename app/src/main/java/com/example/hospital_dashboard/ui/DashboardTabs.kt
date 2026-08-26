@@ -58,6 +58,7 @@ import com.example.hospital_dashboard.ui.charts.HBarClick
 import com.example.hospital_dashboard.ui.charts.HBarChart
 import com.example.hospital_dashboard.ui.charts.LineChart
 import com.example.hospital_dashboard.ui.charts.PieChart
+import com.example.hospital_dashboard.ui.charts.VBarClick
 import com.example.hospital_dashboard.ui.charts.VBarChart
 import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.Dispatchers
@@ -117,11 +118,11 @@ private fun HBarCard(
 private fun VBarCard(
     vm: DashboardViewModel, title: String, data: VBarData?,
     height: Dp = 240.dp, fmt: (Double) -> String = Fmt::compact,
-    clickable: Boolean = false // true = 放大檢視時點科別顯示各院區明細
+    click: VBarClick = VBarClick.None // 放大檢視時點擊長條的明細模式
 ) {
     ChartCard(
         title,
-        onClick = data?.let { { vm.openZoom(ChartContent.VBar(title, it, fmt, clickable)) } }
+        onClick = data?.let { { vm.openZoom(ChartContent.VBar(title, it, fmt, click)) } }
     ) {
         data?.let { VBarChart(it, height = height, valueFormatter = fmt) } ?: LoadingBox()
     }
@@ -240,8 +241,8 @@ fun IpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 200.dp)
         LineCard(vm, "住院 vs 出院人日趨勢", days, height = 200.dp)
         HBarCard(vm, "各院區住院人次", brBar, height = 180.dp)
-        VBarCard(vm, "Top 15 科別住院人次", admBar, height = 240.dp, clickable = true)
-        VBarCard(vm, "Top 15 科別平均住院日", losBar, height = 240.dp, clickable = true)
+        VBarCard(vm, "Top 15 科別住院人次", admBar, height = 240.dp, click = VBarClick.DeptBranch)
+        VBarCard(vm, "Top 15 科別平均住院日", losBar, height = 240.dp, click = VBarClick.DeptBranch)
     }
 }
 
@@ -379,6 +380,73 @@ fun OtherTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         VBarCard(vm, "收入趨勢（總收入）", income?.first, height = 230.dp, fmt = Fmt::money)
         LineCard(vm, "收入趨勢（自費收入）", income?.second, height = 200.dp, fmt = Fmt::money)
         HBarCard(vm, "各院區總收入", brInc, height = 220.dp, fmt = Fmt::money)
+    }
+}
+
+// ══════════ TAB6 醫師服務量 ═══════════════════════
+@Composable
+fun PhysServiceTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
+    val vols = loadChart(listOf(filters)) { vm.repo.physDeptVolumes(filters) }
+
+    fun topBar(
+        vols: List<DashboardRepo.PhysDeptVol>?,
+        select: (DashboardRepo.PhysDeptVol) -> Double,
+        segName: String
+    ): VBarData? =
+        vols?.filter { select(it) > 0 }?.sortedByDescending(select)?.take(20)
+            ?.map { VBarGroup(it.dept, listOf(BarSegment(segName, select(it)))) }
+            ?.let { VBarData(it) }
+
+    TabColumn {
+        VBarCard(vm, "科別門診人次 (Top 20)", topBar(vols, { it.opd }, "門診人次"),
+            height = 240.dp, click = VBarClick.PhysDept)
+        VBarCard(vm, "科別急診人次 (Top 20)", topBar(vols, { it.er }, "急診人次"),
+            height = 240.dp, click = VBarClick.PhysDept)
+        VBarCard(vm, "科別住院人次 (Top 20)", topBar(vols, { it.adm }, "住院人次"),
+            height = 240.dp, click = VBarClick.PhysDept)
+        VBarCard(vm, "科別住院人日 (Top 20)", topBar(vols, { it.days }, "住院人日"),
+            height = 240.dp, click = VBarClick.PhysDept)
+    }
+}
+
+// ══════════ TAB7 醫師收入統計 ═══════════════════════
+@Composable
+fun PhysIncomeTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
+    val income = loadChart(listOf(filters)) { vm.repo.physIncomeMonthly(filters) }
+    val pie = loadChart(listOf(filters)) { vm.repo.physIncomePie(filters) }
+    val anchor = loadChart(listOf(filters)) { vm.repo.anchorYm(filters) }
+
+    val anchorLabel = anchor?.let { "${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: "—"
+
+    TabColumn {
+        VBarCard(vm, "全院收入月趨勢（門診/住院 × 健保/自費）", income,
+            height = 250.dp, fmt = Fmt::money, click = VBarClick.BranchIncome)
+        PieCard(vm, "💰 當月收入結構（$anchorLabel）", pie)
+
+        // 健保收入 / 住院收入 比率說明
+        val p = pie
+        if (p != null && p.slices.isNotEmpty()) {
+            val total = p.slices.sumOf { it.value }
+            if (total > 0) {
+                val nhi = p.slices.filter { it.label.contains("健保") }.sumOf { it.value }
+                val ipd = p.slices.filter { it.label.startsWith("住院") }.sumOf { it.value }
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Text("健保收入 ${String.format("%.1f%%", nhi / total * 100)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text("自費收入 ${String.format("%.1f%%", (total - nhi) / total * 100)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text("住院收入 ${String.format("%.1f%%", ipd / total * 100)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
     }
 }
 

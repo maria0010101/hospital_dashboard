@@ -35,6 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -111,6 +112,9 @@ fun seriesColor(name: String, index: Int): Color =
 /** 橫條圖點擊列的明細模式。 */
 enum class HBarClick { None, DeptBranch, BranchDept }
 
+/** 直條圖點擊長條的明細模式。 */
+enum class VBarClick { None, DeptBranch, PhysDept, BranchIncome }
+
 sealed class ChartContent {
     abstract val title: String
 
@@ -131,7 +135,7 @@ sealed class ChartContent {
         override val title: String,
         val data: VBarData,
         val valueFormatter: (Double) -> String = Fmt::compact,
-        val clickable: Boolean = false // true = 點擊長條顯示該科別各院區明細
+        val click: VBarClick = VBarClick.None // 點擊長條 → 科別各院區 / 科別醫師服務量 / 各院區收入
     ) : ChartContent()
 
     data class Pie(override val title: String, val data: PieData) : ChartContent()
@@ -293,27 +297,41 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                     }
                 }
                 is ChartContent.VBar -> {
-                    var selectedDept by remember(content) { mutableStateOf<String?>(null) }
+                    var selectedLabel by remember(content) { mutableStateOf<String?>(null) }
                     ZoomableBox {
                         VBarChart(
                             content.data,
                             height = chartHeight.coerceAtLeast(160.dp),
                             valueFormatter = content.valueFormatter,
-                            interactive = content.clickable,
+                            interactive = content.click != VBarClick.None,
                             onBarSelected = { idx ->
-                                if (content.clickable) {
-                                    selectedDept = content.data.groups.getOrNull(idx)?.label
+                                if (content.click != VBarClick.None) {
+                                    selectedLabel = content.data.groups.getOrNull(idx)?.label
                                 }
                             }
                         )
                     }
-                    // 點擊科別長條 → 各院區明細(與去年同期比較)
-                    selectedDept?.let { dept ->
-                        DeptBranchCard(
-                            vm, dept,
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            onDismiss = { selectedDept = null }
-                        )
+                    when (content.click) {
+                        // 點擊科別長條 → 各院區明細(含去年同期 + 近三個月趨勢)
+                        VBarClick.DeptBranch -> selectedLabel?.let { dept ->
+                            DeptBranchCard(
+                                vm, dept,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedLabel = null }
+                            )
+                        }
+                        // 點擊科別長條 → 該科別醫師服務量 + 近三個月 + 去年同期
+                        VBarClick.PhysDept -> selectedLabel?.let { dept ->
+                            PhysDeptSheet(vm, dept, onDismiss = { selectedLabel = null })
+                        }
+                        // 點擊月份長條 → 各院區收入(近三個月趨勢 + 去年同期成長率)
+                        VBarClick.BranchIncome -> selectedLabel?.let { label ->
+                            val ym = parseYmLabel(label)?.let { (y, m) -> y * 100 + m }
+                            if (ym != null) {
+                                IncomeDetailSheet(vm, ym, onDismiss = { selectedLabel = null })
+                            }
+                        }
+                        VBarClick.None -> {}
                     }
                 }
                 is ChartContent.Pie ->
@@ -432,41 +450,65 @@ private fun LineTooltipCard(
             }
             Spacer(Modifier.height(4.dp))
             info.items.forEachIndexed { i, item ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(seriesColor(item.seriesName, i)))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        item.seriesName,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        yFormatter(item.value),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    if (item.prior != null) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(seriesColor(item.seriesName, i)))
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            "去年 ${yFormatter(item.prior)}",
+                            item.seriesName,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
+                            modifier = Modifier.weight(1f)
                         )
+                        Text(
+                            yFormatter(item.value),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        if (item.prior != null) {
+                            Text(
+                                "去年 ${yFormatter(item.prior)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        if (item.deltaPct != null) {
+                            val up = item.deltaPct >= 0
+                            Text(
+                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            )
+                        } else {
+                            Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    if (item.deltaPct != null) {
-                        val up = item.deltaPct >= 0
-                        Text(
-                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                        )
-                    } else {
-                        Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    // 近三個月增減趨勢
+                    if (item.recent3.any { it != null }) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 15.dp, top = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "近三個月 " + item.recent3.joinToString(" → ") { v ->
+                                    if (v != null) yFormatter(v) else "—"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (item.recentDeltaPct != null) {
+                                val up = item.recentDeltaPct >= 0
+                                Text(
+                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -484,6 +526,9 @@ private fun DeptOpdCard(
 ) {
     val stats by produceState<List<DashboardRepo.DeptOpdBranchStat>>(emptyList(), dept) {
         value = withContext(Dispatchers.IO) { vm.repo.deptOpdBranchStats(vm.filters.value, dept) }
+    }
+    val recent3 by produceState<Map<String, List<Double?>>>(emptyMap(), dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.deptOpdBranchRecent3(vm.filters.value, dept) }
     }
     val periodNote = periodNoteOf(vm)
 
@@ -522,6 +567,7 @@ private fun DeptOpdCard(
                     Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     DeptMetricLine("門診人次", s.opd, s.opdPrior, Fmt::compact, pct = true)
                     DeptMetricLine("總診次", s.sessions, s.sessionsPrior, Fmt::compact, pct = true)
+                    Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact)
                 }
             }
         }
@@ -538,6 +584,9 @@ private fun BranchDeptCard(
 ) {
     val stats by produceState<List<DashboardRepo.BranchOpdDeptStat>>(emptyList(), branch) {
         value = withContext(Dispatchers.IO) { vm.repo.branchOpdDeptStats(vm.filters.value, branch) }
+    }
+    val recent3 by produceState<Map<String, List<Double?>>>(emptyMap(), branch) {
+        value = withContext(Dispatchers.IO) { vm.repo.branchOpdDeptRecent3(vm.filters.value, branch) }
     }
     val periodNote = periodNoteOf(vm)
 
@@ -572,30 +621,70 @@ private fun BranchDeptCard(
             }
             Spacer(Modifier.height(4.dp))
             stats.forEach { s ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.dept, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                    Text(Fmt.compact(s.opd), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(8.dp))
-                    if (s.opdPrior != null) {
-                        Text("去年 ${Fmt.compact(s.opdPrior)}", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline)
+                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(s.dept, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                        Text(Fmt.compact(s.opd), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
-                        if (s.opdPrior != 0.0) {
-                            val d = (s.opd - s.opdPrior) / s.opdPrior * 100.0
-                            val up = d >= 0
-                            Text(
-                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                            )
+                        if (s.opdPrior != null) {
+                            Text("去年 ${Fmt.compact(s.opdPrior)}", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.width(8.dp))
+                            if (s.opdPrior != 0.0) {
+                                val d = (s.opd - s.opdPrior) / s.opdPrior * 100.0
+                                val up = d >= 0
+                                Text(
+                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                )
+                            } else {
+                                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            }
                         } else {
                             Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                         }
-                    } else {
-                        Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
+                    Recent3Line(recent3[s.dept] ?: emptyList(), Fmt::compact)
                 }
+            }
+        }
+    }
+}
+
+/** 近三個月增減趨勢列(用於各明細卡)。 */
+@Composable
+private fun Recent3Line(
+    values: List<Double?>,
+    fmt: (Double) -> String,
+    prefix: String = "近三個月"
+) {
+    val present = values.filterNotNull()
+    if (present.isEmpty()) return
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, top = 1.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("$prefix ", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline)
+        Text(
+            values.joinToString(" → ") { v -> if (v != null) fmt(v) else "—" },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.weight(1f)
+        )
+        if (present.size >= 2) {
+            val prev = present[present.size - 2]
+            if (prev != 0.0) {
+                val d = (present.last() - prev) / prev * 100.0
+                val up = d >= 0
+                Text(
+                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                )
             }
         }
     }
@@ -624,6 +713,9 @@ private fun DeptBranchCard(
 ) {
     val stats by produceState<List<DashboardRepo.DeptBranchStat>>(emptyList(), dept) {
         value = withContext(Dispatchers.IO) { vm.repo.deptBranchStats(vm.filters.value, dept) }
+    }
+    val recent3 by produceState<Map<String, List<Double?>>>(emptyMap(), dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.deptBranchRecent3(vm.filters.value, dept) }
     }
     val periodNote = periodNoteOf(vm)
 
@@ -671,6 +763,7 @@ private fun DeptBranchCard(
                         { String.format("%.1f天", it) },
                         pct = false
                     )
+                    Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact, prefix = "近三月住院人次")
                 }
             }
         }
@@ -714,6 +807,201 @@ private fun DeptMetricLine(
     }
 }
 
+/** 近三個月趨勢列(4 指標)＋去年同期成長率。 */
+@Composable
+private fun TrendMetricRow(name: String, values: List<Double>, fmt: (Double) -> String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        Text(
+            values.joinToString(" → ") { fmt(it) },
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.width(8.dp))
+        if (values.size >= 2 && values[values.size - 2] != 0.0) {
+            val d = (values.last() - values[values.size - 2]) / values[values.size - 2] * 100.0
+            val up = d >= 0
+            Text(
+                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+            )
+        }
+    }
+}
+
+@Composable
+private fun YoyMetricLine(name: String, cur: Double, prior: Double?, fmt: (Double) -> String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+        Text(fmt(cur), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        if (prior != null) {
+            Text("去年 ${fmt(prior)}", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline)
+            Spacer(Modifier.width(8.dp))
+            if (prior != 0.0 && cur != 0.0) {
+                val d = (cur - prior) / prior * 100.0
+                val up = d >= 0
+                Text(
+                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                )
+            } else {
+                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+        } else {
+            Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        }
+    }
+}
+
+/** 科別醫師服務量明細(點擊醫師服務量分頁科別長條顯示)。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PhysDeptSheet(vm: DashboardViewModel, dept: String, onDismiss: () -> Unit) {
+    val filters = vm.filters.value
+    val anchor by produceState<Pair<Int, Int>?>(null, dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.anchorYm(filters) }
+    }
+    val trend by produceState<List<DashboardRepo.PhysTrend>>(emptyList(), dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.physDeptTrend3(filters, dept) }
+    }
+    val yoy by produceState<Pair<DashboardRepo.PhysTrend?, DashboardRepo.PhysTrend?>>(null to null, dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.physDeptYoy(filters, dept) }
+    }
+    val doctors by produceState<List<DashboardRepo.PhysDoctorStat>>(emptyList(), dept) {
+        value = withContext(Dispatchers.IO) { vm.repo.physDoctorsForDept(filters, dept) }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+        ) {
+            Text("🩺 $dept 醫師服務量明細",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            val note = periodNoteOf(vm)
+            if (note.isNotEmpty()) {
+                Text(note, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            Spacer(Modifier.height(8.dp))
+
+            // 近三個月增減趨勢
+            Text("📈 近三個月增減趨勢", style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (trend.isNotEmpty()) {
+                TrendMetricRow("門診人次", trend.map { it.opd }, Fmt::compact)
+                TrendMetricRow("急診人次", trend.map { it.er }, Fmt::compact)
+                TrendMetricRow("住院人次", trend.map { it.adm }, Fmt::compact)
+                TrendMetricRow("住院人日", trend.map { it.days }, Fmt::compact)
+            } else {
+                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+
+            Spacer(Modifier.height(8.dp))
+            // 去年同期成長率
+            val cur = yoy.first
+            val prior = yoy.second
+            val anchorLabel = anchor?.let { "${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: "本月"
+            Text("📊 去年同期成長率（$anchorLabel vs 去年同月）",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (cur != null) {
+                YoyMetricLine("門診人次", cur.opd, prior?.opd, Fmt::compact)
+                YoyMetricLine("急診人次", cur.er, prior?.er, Fmt::compact)
+                YoyMetricLine("住院人次", cur.adm, prior?.adm, Fmt::compact)
+                YoyMetricLine("住院人日", cur.days, prior?.days, Fmt::compact)
+            } else {
+                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+
+            Spacer(Modifier.height(8.dp))
+            // 醫師服務量
+            Text("👨‍⚕️ 醫師服務量（依門診人次排序）", style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (doctors.isEmpty()) {
+                Text("此科別於篩選區間無醫師服務資料", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            doctors.forEach { d ->
+                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(d.doctorName, style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text("門診 ${Fmt.int(d.opd)}", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Text(
+                            "診次 ${Fmt.int(d.sessions)} ｜ 急診 ${Fmt.int(d.er)} ｜ " +
+                                "住院人次 ${Fmt.int(d.adm)} ｜ 住院人日 ${Fmt.int(d.days)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** 各院區收入明細(點擊收入月份長條顯示)。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun IncomeDetailSheet(vm: DashboardViewModel, ym: Int, onDismiss: () -> Unit) {
+    val filters = vm.filters.value
+    val stats by produceState<List<DashboardRepo.BranchIncomeStat>>(emptyList(), ym) {
+        value = withContext(Dispatchers.IO) { vm.repo.physBranchIncome(filters, ym) }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+        ) {
+            Text("💰 ${ym / 100}年${(ym % 100).toString().padStart(2, '0')}月 各院區收入明細",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("近三個月趨勢 ｜ 與去年同期比較", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline)
+            Spacer(Modifier.height(8.dp))
+            stats.forEach { s ->
+                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("本月 ${Fmt.money(s.cur)}", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.width(8.dp))
+                            if (s.prior != null) {
+                                Text("去年 ${Fmt.money(s.prior)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(8.dp))
+                                if (s.deltaPct != null) {
+                                    val up = s.deltaPct >= 0
+                                    Text(
+                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", s.deltaPct),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                    )
+                                }
+                            }
+                        }
+                        Recent3Line(s.trend, Fmt::money, prefix = "近三個月")
+                    }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
 /** 從 Context 找回 Activity(用於切換螢幕方向)。 */
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -742,12 +1030,14 @@ private fun Legend(names: List<String>) {
 
 // ── 折線圖 ───────────────────────────────────────────
 
-/** 單一序列在該 x 點的資料(含去年同期增減)。 */
+/** 單一序列在該 x 點的資料(含去年同期增減 + 近三個月趨勢)。 */
 data class PointItem(
     val seriesName: String,
     val value: Double,
     val prior: Double?,
-    val deltaPct: Double? // 去年同期增減比率(%)
+    val deltaPct: Double?, // 去年同期增減比率(%)
+    val recent3: List<Double?> = emptyList(), // 近三個月(含本期，由舊到新)
+    val recentDeltaPct: Double? = null        // 本期 vs 上個月增減(%)
 )
 
 /** 某 x 點的詳細資料(所有本期序列)。 */
@@ -832,7 +1122,8 @@ private fun findNearestPoint(data: LineChartData, tap: Offset, size: IntSize, de
     // 去年同期 = (年-1, 同月) 的 x 索引(圖表 x 軸為 民國年月)
     val ym = parseYmLabel(data.xLabels.getOrNull(bestIdx) ?: "")
     val priorIdx = ym?.let { (y, m) ->
-        data.xLabels.indexOfFirst { it.startsWith("${y - 1}年${m}月") }
+        // 注意：軸標籤月份為補零格式(09月)，搜尋字串須同樣補零
+        data.xLabels.indexOfFirst { it.startsWith("${y - 1}年${m.toString().padStart(2, '0')}月") }
     } ?: -1
 
     val items = data.series.filter { !it.dashed }.mapNotNull { s ->
@@ -840,7 +1131,11 @@ private fun findNearestPoint(data: LineChartData, tap: Offset, size: IntSize, de
         val priorSeries = data.series.firstOrNull { it.dashed && it.name == "${s.name}(去年)" }
         val p = if (priorIdx >= 0) priorSeries?.values?.getOrNull(priorIdx) else null
         val delta = if (v != 0.0 && p != null && p != 0.0 && !p.isNaN()) (v - p) / p * 100.0 else null
-        PointItem(s.name, v, p, delta)
+        // 近三個月(含本期)：直接取自該序列的 x 索引(前兩期 + 本期)
+        val recent = (bestIdx - 2..bestIdx).map { s.values.getOrNull(it) }
+        val prevV = s.values.getOrNull(bestIdx - 1)
+        val rd = if (prevV != null && prevV != 0.0 && v != 0.0 && !prevV.isNaN()) (v - prevV) / prevV * 100.0 else null
+        PointItem(s.name, v, p, delta, recent, rd)
     }
     return PointInfo(data.xLabels[bestIdx], items)
 }
@@ -1089,7 +1384,12 @@ fun VBarChart(
             val chartW = size.width - labelW - 4.dp.toPx()
             val chartH = size.height - bottomH - topPad
 
-            val maxVal = data.groups.flatMap { it.segments.map { s -> s.value } }.maxOrNull()?.coerceAtLeast(1e-9) ?: 1.0
+            val maxVal = if (data.stacked) {
+                // 堆疊圖：以每根長條的「整柱總和」計算刻度，避免溢出色繪區
+                data.groups.maxOfOrNull { g -> g.segments.sumOf { it.value } } ?: 1.0
+            } else {
+                data.groups.flatMap { it.segments.map { s -> s.value } }.maxOrNull() ?: 1.0
+            }.coerceAtLeast(1e-9)
             val scaleMax = maxVal * 1.15
             val n = data.groups.size
             val groupW = chartW / n.coerceAtLeast(1)

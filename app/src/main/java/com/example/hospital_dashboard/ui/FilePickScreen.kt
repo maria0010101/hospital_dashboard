@@ -77,9 +77,9 @@ fun FilePickScreen(vm: DashboardViewModel) {
             Column(Modifier.padding(16.dp)) {
                 Text("📂 選擇業務資料表檔案", fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                Text("請由手機中選取「業務資料彙整-1150508.xlsx」資料表檔案。", style = MaterialTheme.typography.bodyMedium)
+                Text("請由手機中選取「業務資料彙整-1150826.xlsx」資料表檔案。", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
-                Text("檔名減號後的數字為民國年月日(資料更新日期)，例如 1150508 = 民國115年05月08日，系統會自動擷取並顯示於儀表板。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("檔名減號後的數字為民國年月日(資料更新日期)，例如 1150826 = 民國115年08月26日，系統會自動擷取並顯示於儀表板。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

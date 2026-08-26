@@ -28,9 +28,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -86,8 +86,8 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
         ) {
             KpiRow(vm)
-            TabRow(selectedTabIndex = tabIndex) {
-                listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🛏️ 佔床率").forEachIndexed { i, t ->
+            PrimaryScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 8.dp) {
+                listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🛏️ 佔床率", "🩺 醫師服務", "💰 醫師收入").forEachIndexed { i, t ->
                     Tab(selected = tabIndex == i, onClick = { tabIndex = i }, text = { Text(t) })
                 }
             }
@@ -97,6 +97,8 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                 2 -> BedTab(vm, filters)
                 3 -> OtherTab(vm, filters)
                 4 -> BedDetailTab(vm, filters)
+                5 -> PhysServiceTab(vm, filters)
+                6 -> PhysIncomeTab(vm, filters)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -355,53 +357,81 @@ private fun FilterSheet(
             SectionLabel("📆 月份")
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 FilterChip(selected = monthsAll, onClick = {
-                    monthsAll = true; months = emptyList()
+                    if (monthsAll) {
+                        // 取消全選：展開選項(未勾選=全部)，點選即加入
+                        monthsAll = false
+                        months = emptyList()
+                    } else {
+                        monthsAll = true; months = emptyList()
+                    }
                 }, label = { Text("全選") })
                 Spacer(Modifier.width(6.dp))
                 if (!monthsAll) {
-                    Text("未勾選＝全選", style = MaterialTheme.typography.labelSmall,
+                    Text("點選月份取消勾選即排除", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline)
                 }
             }
             if (!monthsAll) {
                 ChipFlow(monthOpts.map { it to "${it}月" }, months.toSet()) { opt ->
                     months = if (opt in months) months - opt else months + opt
+                    if (months.isEmpty()) monthsAll = true // 全部取消 → 回到全選
                 }
             }
 
             SectionLabel("🏢 院區")
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 FilterChip(selected = branchesAll, onClick = {
-                    branchesAll = true; branches = emptyList()
+                    if (branchesAll) {
+                        // 取消全選：展開選項(未勾選=全部)，點選即加入
+                        branchesAll = false
+                        branches = emptyList()
+                    } else {
+                        branchesAll = true; branches = emptyList()
+                    }
                 }, label = { Text("全選") })
             }
             if (!branchesAll) {
                 ChipFlow(branchOpts.map { it to it }, branches.toSet()) { opt ->
                     branches = if (opt in branches) branches - opt else branches + opt
+                    if (branches.isEmpty()) branchesAll = true
                 }
             }
 
             SectionLabel("🏥 部別")
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 FilterChip(selected = divsAll, onClick = {
-                    divsAll = true; divs = emptyList()
+                    if (divsAll) {
+                        // 取消全選：展開選項(未勾選=全部)，點選即加入
+                        divsAll = false
+                        divs = emptyList()
+                    } else {
+                        divsAll = true; divs = emptyList()
+                    }
                 }, label = { Text("全選") })
             }
             if (!divsAll) {
                 ChipFlow(divOpts.map { it to it }, divs.toSet()) { opt ->
                     divs = if (opt in divs) divs - opt else divs + opt
+                    if (divs.isEmpty()) divsAll = true
                 }
             }
 
             SectionLabel("🩺 科別")
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 FilterChip(selected = deptsAll, onClick = {
-                    deptsAll = true; depts = emptyList()
+                    if (deptsAll) {
+                        // 取消全選：展開選項(未勾選=全部)，點選即加入
+                        deptsAll = false
+                        depts = emptyList()
+                    } else {
+                        deptsAll = true; depts = emptyList()
+                    }
                 }, label = { Text("全選") })
             }
             if (!deptsAll) {
                 ChipFlow(deptOpts.map { it to it }, depts.toSet()) { opt ->
                     depts = if (opt in depts) depts - opt else depts + opt
+                    if (depts.isEmpty()) deptsAll = true
                 }
             }
 

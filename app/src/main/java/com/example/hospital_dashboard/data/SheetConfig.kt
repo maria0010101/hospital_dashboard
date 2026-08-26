@@ -9,7 +9,9 @@ package com.example.hospital_dashboard.data
 data class SheetConfig(
     val sheet: String,        // Excel 工作表名稱
     val table: String,        // SQLite 資料表名稱
-    val columns: List<String> // 欄位名稱(依序)
+    val columns: List<String>, // 欄位名稱(依序)
+    /** 選用：匯入時對「取前 columns.size 欄」後的列資料做後處理(例如由 ym 衍生 year/month)。 */
+    val derive: ((List<String?>) -> List<String?>)? = null
 )
 
 object SheetConfigs {
@@ -44,7 +46,8 @@ object SheetConfigs {
             table = "bed_type_service",
             columns = listOf(
                 "note", "year", "month", "branch", "days_in_month",
-                "floor", "nursing_station", "dept",
+                // 1150826 起移除「樓層」「科別」兩欄，其餘欄位依序左移
+                "nursing_station",
                 "major_category", "category", "registered_beds", "actual_open_beds",
                 "admission_count", "discharge_count", "discharge_days", "admission_days",
                 "registered_bed_days", "actual_bed_days",
@@ -100,13 +103,21 @@ object SheetConfigs {
                 "branch_name", "merged_branch_name"
             )
         ),
+        // 醫師服務量(1150826 起新增)：年月為 11301 形式，匯入時衍生 year/month
         SheetConfig(
-            sheet = "醫師數",
-            table = "physician_count",
+            sheet = "醫師服務量",
+            table = "physician_service",
             columns = listOf(
-                "year", "month", "ym", "employee_id", "name",
-                "branch", "role", "dept", "dept_org"
-            )
+                "ym", "branch_name", "doctor_id", "doctor_name", "dept_div", "dept",
+                "sessions", "opd_visit_count", "er_visit", "admission_count", "admission_days",
+                "opd_nhi_income", "opd_selfpay_income", "ipd_nhi_income", "ipd_selfpay_income",
+                "year", "month"
+            ),
+            derive = { row ->
+                val ym = row.getOrNull(0)?.trim()?.toIntOrNull()
+                if (ym != null) row + listOf((ym / 100).toString(), (ym % 100).toString())
+                else row + listOf(null, null)
+            }
         )
     )
 
