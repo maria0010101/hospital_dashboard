@@ -1269,6 +1269,162 @@ class DashboardRepo(private val db: HospitalDb) {
         return buildRecentMap(rows, yms, 3)
     }
 
+    // ══════════ AI 分析（混淆資料生成） ═════════════
+    /** 單一院區錨點月營運摘要（真實名稱，供本地混淆後再上傳 AI）。 */
+    class BranchAnalysisSummary(
+        val branch: String,
+        val anchorLabel: String,
+        val kpis: List<Triple<String, Double, Double?>>,   // 指標名, 本期, 去年同期
+        val deptOpd: List<Pair<String, Double>>,
+        val income: List<Pair<String, Double>>,
+        val doctors: List<Pair<String, Double>>
+    ) {
+        fun toText(): String = buildString {
+            appendLine("【院區】$branch")
+            appendLine("【基準月份】$anchorLabel")
+            appendLine("【營運概況】")
+            kpis.forEach { (name, cur, prior) ->
+                val yoy = if (prior != null && prior != 0.0) {
+                    val d = (cur - prior) / prior * 100.0
+                    if (d >= 0) "（去年同期 ${Fmt.int(prior)}，▲+${String.format("%.1f%%", d)}）"
+                    else "（去年同期 ${Fmt.int(prior)}，▼${String.format("%.1f%%", d)}）"
+                } else ""
+                appendLine("- $name：${Fmt.int(cur)}$yoy")
+            }
+            appendLine("【科別門診人次 Top8】")
+            deptOpd.forEach { (d, v) -> appendLine("- $d：${Fmt.int(v)} 人次") }
+            appendLine("【當月收入結構】")
+            income.forEach { (n, v) -> appendLine("- $n：${Fmt.money(v)}") }
+            appendLine("【醫師服務量 Top5】")
+            doctors.forEach { (n, v) -> appendLine("- $n：門診 ${Fmt.int(v)} 人次") }
+        }
+    }
+
+    /** 單一院區最新月份營運摘要（含去年同期比較）。 */
+    fun branchAnalysisSummary(branch: String): BranchAnalysisSummary? {
+        val a = anchorYm(Filters(years = emptyList())) ?: return null
+        val (y, m) = a
+        val py = (y - 1).toString(); val ys = y.toString(); val ms = m.toString()
+
+        fun row(sql: String, vararg params: String): List<Any?>? =
+            db.query(sql, params.toList().toTypedArray()).firstOrNull()
+
+        // 門診 KPI
+        val opd = row(
+            "SELECT SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE branch_name=? AND year=? AND month=?",
+            branch, ys, ms)
+        // 住院 KPI
+        val ipd = row(
+            "SELECT SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
+                "FROM inpatient_service WHERE branch_name=? AND year=? AND month=?",
+            branch, ys, ms)
+        // 平均實際佔床率
+        val occ = row(
+            "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
+                "FROM bed_type_service WHERE branch_name=? AND year=? AND month=?",
+            branch, ys, ms)
+        // 收入結構
+        val inc = row(
+            "SELECT SUM(CAST(opd_nhi_income AS REAL)), SUM(CAST(opd_selfpay_income AS REAL)), " +
+                "SUM(CAST(ipd_nhi_income AS REAL)), SUM(CAST(ipd_selfpay_income AS REAL)) " +
+                "FROM physician_service WHERE branch_name=? AND year=? AND month=?",
+            branch, ys, ms)
+        // 去年同期
+        val opdP = row(
+            "SELECT SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE branch_name=? AND year=? AND month=?",
+            branch, py, ms)
+        val ipdP = row(
+            "SELECT SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)) " +
+                "FROM inpatient_service WHERE branch_name=? AND year=? AND month=?",
+            branch, py, ms)
+        val occP = row(
+            "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
+                "FROM bed_type_service WHERE branch_name=? AND year=? AND month=?",
+            branch, py, ms)
+
+        val kpis = mutableListOf<Triple<String, Double, Double?>>()
+        kpis.add(Triple("門診人次", num(opd?.get(0)) ?: 0.0, num(opdP?.get(0))))
+        kpis.add(Triple("急診人次", num(opd?.get(1)) ?: 0.0, num(opdP?.get(1))))
+        kpis.add(Triple("總診次", num(opd?.get(2)) ?: 0.0, num(opdP?.get(2))))
+        kpis.add(Triple("住院人次", num(ipd?.get(0)) ?: 0.0, num(ipdP?.get(0))))
+        kpis.add(Triple("住院人日", num(ipd?.get(1)) ?: 0.0, num(ipdP?.get(1))))
+        val occV = num(occ?.get(0))?.let { it * 100.0 }
+        val occPV = num(occP?.get(0))?.let { it * 100.0 }
+        if (occV != null) kpis.add(Triple("平均實際佔床率", occV, occPV))
+
+        // 科別門診 Top8
+        val deptRows = db.query(
+            "SELECT dept, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
+                "WHERE branch_name=? AND year=? AND month=? AND dept IS NOT NULL AND dept != '' " +
+                "GROUP BY dept ORDER BY 2 DESC LIMIT 8",
+            arrayOf(branch, ys, ms))
+        val deptOpd = deptRows.mapNotNull { r ->
+            val v = num(r[1]) ?: 0.0
+            if (v <= 0) null else (r[0].toString() to v)
+        }
+        // 醫師 Top5
+        val docRows = db.query(
+            "SELECT doctor_name, SUM(CAST(opd_visit_count AS REAL)) FROM physician_service " +
+                "WHERE branch_name=? AND year=? AND month=? AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                "GROUP BY doctor_name ORDER BY 2 DESC LIMIT 5",
+            arrayOf(branch, ys, ms))
+        val doctors = docRows.mapNotNull { r ->
+            val v = num(r[1]) ?: 0.0
+            if (v <= 0) null else (r[0].toString() to v)
+        }
+        val income = listOf(
+            "門診健保收入" to (num(inc?.get(0)) ?: 0.0),
+            "門診自費收入" to (num(inc?.get(1)) ?: 0.0),
+            "住院健保收入" to (num(inc?.get(2)) ?: 0.0),
+            "住院自費收入" to (num(inc?.get(3)) ?: 0.0)
+        ).filter { it.second > 0 }
+
+        return BranchAnalysisSummary(
+            branch = branch,
+            anchorLabel = "$y 年${m.toString().padStart(2, '0')}月",
+            kpis = kpis, deptOpd = deptOpd, income = income, doctors = doctors
+        )
+    }
+
+    /** 供貼文混淆用的實體名稱字典（院區/科別/醫師/門診部）。 */
+    class EntityDictionary(
+        val branches: List<String>,
+        val depts: List<String>,
+        val doctors: List<String>,
+        val clinics: List<String>
+    )
+
+    fun anonymizerDictionary(): EntityDictionary {
+        // 院區順序固定（與樣本資料對照一致：忠孝→甲、中興→乙、和平→丙），其餘依筆畫排序
+        val preferred = listOf("忠孝", "中興", "和平")
+        val branchRows = db.query(
+            """SELECT branch_name FROM outpatient_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM inpatient_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM bed_type_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM offsite_clinic_service WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM accounting_report WHERE branch_name IS NOT NULL AND branch_name != ''
+               UNION SELECT branch_name FROM ops_management_indicators WHERE branch_name IS NOT NULL AND branch_name != ''""")
+        val branches = branchRows.map { it[0].toString() }.filter { it.isNotEmpty() }.distinct()
+            .sortedWith(compareBy({ if (it in preferred) preferred.indexOf(it) else 99 }, { it }))
+        val depts = db.query(
+            """SELECT DISTINCT dept FROM (
+                 SELECT dept FROM outpatient_service WHERE dept IS NOT NULL AND dept != ''
+                 UNION ALL SELECT dept FROM physician_service WHERE dept IS NOT NULL AND dept != ''
+                 UNION ALL SELECT dept FROM inpatient_service WHERE dept IS NOT NULL AND dept != ''
+               )""").map { it[0].toString() }.filter { it.isNotEmpty() }.distinct().sorted()
+        val doctors = db.query(
+            "SELECT DISTINCT doctor_name FROM physician_service " +
+                "WHERE doctor_name IS NOT NULL AND LENGTH(TRIM(doctor_name)) >= 2")
+            .map { it[0].toString() }.filter { it.isNotEmpty() }.sorted()
+        val clinics = db.query(
+            "SELECT DISTINCT clinic_name FROM offsite_clinic_service " +
+                "WHERE clinic_name IS NOT NULL AND LENGTH(TRIM(clinic_name)) >= 2")
+            .map { it[0].toString() }.filter { it.isNotEmpty() }.sorted()
+        return EntityDictionary(branches, depts, doctors, clinics)
+    }
+
     // ══════════ 色階 ════════════════════════════════
     /** 佔床率 0-100 → 紅-黃-綠 色階(RdYlGn)。 */
     fun occupancyColor(pct: Double): Long {
