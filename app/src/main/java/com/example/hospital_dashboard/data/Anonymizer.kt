@@ -88,6 +88,31 @@ class Anonymizer {
         return arr.toString()
     }
 
+    /**
+     * 由既有對照表重建各類別計數器：
+     * 新名稱一律接續「該類別目前最大編號 + 1」，避免與既有代號重複。
+     */
+    private fun rebuildCounters() {
+        counters.clear()
+        realToCode.values.forEach { code ->
+            val kind = when {
+                code.length >= 2 && code[0] in branchNumerals && code.endsWith(Kind.Branch.codePrefix) -> Kind.Branch
+                code.startsWith(Kind.Dept.codePrefix) -> Kind.Dept
+                code.startsWith(Kind.Doctor.codePrefix) -> Kind.Doctor
+                code.startsWith(Kind.Clinic.codePrefix) -> Kind.Clinic
+                else -> return@forEach
+            }
+            val num = when (kind) {
+                Kind.Branch -> {
+                    val idx = branchNumerals.indexOf(code[0])
+                    if (idx >= 0) idx + 1 else code.removePrefix("院區").toIntOrNull() ?: 0
+                }
+                else -> code.substring(kind.codePrefix.length).toIntOrNull() ?: 0
+            }
+            counters[kind] = maxOf(counters[kind] ?: 0, num)
+        }
+    }
+
     companion object {
         fun fromJson(s: String?): Anonymizer {
             val a = Anonymizer()
@@ -99,6 +124,7 @@ class Anonymizer {
                     a.put(o.optString("real"), o.optString("code"))
                 }
             } catch (e: Exception) { /* 忽略損毀快取 */ }
+            a.rebuildCounters()
             return a
         }
     }

@@ -49,6 +49,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -120,7 +121,12 @@ fun AnalysisTab(vm: DashboardViewModel) {
             .edit().putString(KEY_MAPPING, anonymizer.toJson()).apply()
     }
 
-    fun registerDictionary() {
+    /**
+     * 每次混淆前自動合併目前資料庫的最新實體字典：
+     * 新增的院區/科別/醫師/門診部自動納入對照表（獲得新代號），
+     * 既有名稱保持原代號不變（對照表跨資料更新穩定）。
+     */
+    fun ensureDictionary() {
         scope.launch {
             val dict = withContext(Dispatchers.IO) { vm.repo.anonymizerDictionary() }
             dict.branches.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Branch) }
@@ -130,6 +136,9 @@ fun AnalysisTab(vm: DashboardViewModel) {
             saveMapping()
         }
     }
+
+    // 進入分頁即預先同步對照表（涵蓋最新資料）
+    LaunchedEffect(Unit) { ensureDictionary() }
 
     // 隱藏 WebView 會破壞本機視窗渲染（MIUI 硬體合成衝突）→ 改為匯出 PDF 時才建立，用完即銷毀
 
@@ -153,12 +162,18 @@ fun AnalysisTab(vm: DashboardViewModel) {
     ) {
         // ── 隱私聲明 ──
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))) {
-            Text(
-                "🔒 隱私保護：混淆對照表僅暫存於本機記憶體/快取，永不隨請求上傳；上傳至 AI 伺服器的只有混淆後資料。",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF1B5E20),
-                modifier = Modifier.padding(10.dp)
-            )
+            Column(Modifier.padding(10.dp)) {
+                Text(
+                    "🔒 隱私保護：混淆對照表僅暫存於本機記憶體/快取，永不隨請求上傳；上傳至 AI 伺服器的只有混淆後資料。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF1B5E20)
+                )
+                Text(
+                    "🔄 對照表已自動涵蓋 ${anonymizer.size} 個名稱；新增院區/科別/醫師匯入後將自動納入（既有代號維持不變）。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF1B5E20)
+                )
+            }
         }
 
         // ── 步驟 0：AI 引擎設定 ──
@@ -282,21 +297,14 @@ fun AnalysisTab(vm: DashboardViewModel) {
                                 Toast.makeText(context, "請先輸入或產生資料", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            // 若尚未建立對照表 → 先註冊字典並混淆
-                            if (anonymizer.size == 0) {
-                                registerDictionary()
-                                scope.launch {
-                                    val dict = withContext(Dispatchers.IO) { vm.repo.anonymizerDictionary() }
-                                    dict.branches.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Branch) }
-                                    dict.depts.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Dept) }
-                                    dict.doctors.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Doctor) }
-                                    dict.clinics.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Clinic) }
-                                    saveMapping()
-                                    obfuscatedText = anonymizer.obfuscate(inputText)
-                                    originalPreview = inputText
-                                    showPreview = true
-                                }
-                            } else if (obfuscatedText.isBlank() || originalPreview != inputText) {
+                            // 每次混淆前自動合併最新字典：新增院區/科別/醫師自動納入對照表
+                            scope.launch {
+                                val dict = withContext(Dispatchers.IO) { vm.repo.anonymizerDictionary() }
+                                dict.branches.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Branch) }
+                                dict.depts.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Dept) }
+                                dict.doctors.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Doctor) }
+                                dict.clinics.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Clinic) }
+                                saveMapping()
                                 obfuscatedText = anonymizer.obfuscate(inputText)
                                 originalPreview = inputText
                                 showPreview = true
