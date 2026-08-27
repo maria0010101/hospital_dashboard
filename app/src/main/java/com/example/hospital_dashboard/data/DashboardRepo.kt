@@ -22,7 +22,8 @@ class DashboardRepo(private val db: HospitalDb) {
         val parts = mutableListOf<String>()
         val params = mutableListOf<Any?>()
         val years = f.years.mapNotNull { it.toIntOrNull()?.plus(yearOffset)?.toString() }
-        if (years.isEmpty()) return "" to emptyArray()
+        // 空年度防呆：回傳 1=1 而非空字串，避免「WHERE  GROUP BY」語法錯誤崩潰
+        if (years.isEmpty()) return "1=1" to emptyArray()
         parts.add("year IN (${years.joinToString(",") { "?" }})")
         params.addAll(years)
         if (f.months.isNotEmpty()) {

@@ -40,7 +40,10 @@ object XlsxReader {
         fun readRows(sheetName: String): List<List<String?>> {
             val rid = sheetRid.firstOrNull { it.first == sheetName }?.second ?: return emptyList()
             val target = ridTarget[rid] ?: return emptyList()
-            val path = if (target.startsWith("xl/")) target else "xl/$target"
+            // Target 可能為相對路徑(worksheets/sheet1.xml)或絕對路徑(/xl/worksheets/sheet1.xml，
+            // 如 openpyxl 產出)或已含 xl/ 前綴；一律正規化為 xl/worksheets/sheetN.xml
+            val t = target.removePrefix("/")
+            val path = if (t.startsWith("xl/")) t else "xl/$t"
             val entry = zip.getEntry(path) ?: return emptyList()
             return parseSheet(zip.getInputStream(entry), shared)
         }
