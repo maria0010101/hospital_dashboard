@@ -45,6 +45,10 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     /** 儀表板篩選條件。 */
     val filters = MutableStateFlow(DashboardRepo.Filters(years = emptyList()))
 
+    /** 目前選取的分頁(放 VM：開啟全螢幕放大時 DashboardScreen 離開 composition，
+     *  rememberSaveable 會遺失，改用 VM 才能在縮放後回到原分頁)。 */
+    val tabIndex = MutableStateFlow(0)
+
     /** 全螢幕放大的圖表(null = 未開啟)。 */
     private val _zoomChart = MutableStateFlow<ChartContent?>(null)
     val zoomChart: StateFlow<ChartContent?> = _zoomChart

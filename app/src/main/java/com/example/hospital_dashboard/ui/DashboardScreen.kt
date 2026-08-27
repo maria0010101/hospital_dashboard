@@ -59,7 +59,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
     val filters by vm.filters.collectAsState()
-    var tabIndex by rememberSaveable { mutableStateOf(0) }
+    val tabIndex by vm.tabIndex.collectAsState()
     var showFilters by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -88,7 +88,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
             KpiRow(vm)
             PrimaryScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 8.dp) {
                 listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🛏️ 佔床率", "🩺 醫師服務", "💰 醫師收入").forEachIndexed { i, t ->
-                    Tab(selected = tabIndex == i, onClick = { tabIndex = i }, text = { Text(t) })
+                    Tab(selected = tabIndex == i, onClick = { vm.tabIndex.value = i }, text = { Text(t) })
                 }
             }
             when (tabIndex) {

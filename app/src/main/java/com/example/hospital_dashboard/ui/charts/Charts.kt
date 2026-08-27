@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -334,10 +335,7 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                         VBarClick.None -> {}
                     }
                 }
-                is ChartContent.Pie ->
-                    ZoomableBox {
-                        PieChart(content.data, height = chartHeight.coerceAtLeast(160.dp))
-                    }
+                is ChartContent.Pie -> PieZoomLayout(vm, content.data)
                 is ChartContent.Table ->
                     TableZoom(content.data)
             }
@@ -345,8 +343,13 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
         }
 
         // 底部提示(置於圖表外頁尾，避免與 X 軸標籤重疊)
+        val hint = when (content) {
+            is ChartContent.Pie -> "圓餅圖於右側 ｜ 左側各區塊近三個月趨勢與去年同期比較 ｜ 點標題列關閉"
+            is ChartContent.Table -> "可上下左右捲動檢視"
+            else -> "雙指縮放 ｜ 拖曳移動 ｜ 雙擊還原 ｜ 點擊資料點/長條看明細"
+        }
         Text(
-            if (content is ChartContent.Table) "可上下左右捲動檢視" else "雙指縮放 ｜ 拖曳移動 ｜ 雙擊還原 ｜ 點擊資料點/長條看明細",
+            hint,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier
@@ -1439,12 +1442,15 @@ fun VBarChart(
 
 // ── 圓餅圖 ───────────────────────────────────────────
 @Composable
-fun PieChart(data: PieData, height: Dp = 180.dp) {
+fun PieChart(data: PieData, height: Dp = 160.dp) {
     if (data.slices.isEmpty()) { EmptyHint(); return }
     val total = data.slices.sumOf { it.value }.coerceAtLeast(1e-9)
     Column {
         Canvas(Modifier.fillMaxWidth().height(height)) {
-            val r = min(size.width, size.height) / 2 - 6.dp.toPx()
+            // 圓環外緣 = r + 線寬/2 = r×1.21：以 1.21 反推半徑，確保整個圓環
+            // 完整容納於畫布內(不被上下裁切、不與圖例/標題相黏)
+            val fitR = min(size.width, size.height) / 2 - 8.dp.toPx()
+            val r = (fitR / 1.21f).coerceAtLeast(1f)
             val c = Offset(size.width / 2, size.height / 2)
             var start = -90f
             data.slices.forEachIndexed { i, s ->
@@ -1460,9 +1466,10 @@ fun PieChart(data: PieData, height: Dp = 180.dp) {
                 start += sweep
             }
         }
+        Spacer(Modifier.height(4.dp))
         data.slices.forEachIndexed { i, s ->
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(seriesColor(s.label, i)))
@@ -1472,6 +1479,114 @@ fun PieChart(data: PieData, height: Dp = 180.dp) {
                 Spacer(Modifier.width(8.dp))
                 Text(String.format("%.1f%%", s.value / total * 100),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            }
+        }
+    }
+}
+
+/** 圓餅放大檢視：圓餅圖置右、左方呈現各區塊近三個月趨勢與去年同期比較。 */
+@Composable
+private fun PieZoomLayout(vm: DashboardViewModel, data: PieData) {
+    val detail by produceState<List<DashboardRepo.IncomeSliceStat>>(emptyList()) {
+        value = withContext(Dispatchers.IO) { vm.repo.physIncomeSliceDetail(vm.filters.value) }
+    }
+    val total = data.slices.sumOf { it.value }.coerceAtLeast(1e-9)
+    val items = if (detail.isNotEmpty()) detail
+        else data.slices.map { DashboardRepo.IncomeSliceStat(it.label, it.value, emptyList(), null, null) }
+    val periodNote = periodNoteOf(vm)
+
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // 左方：各區塊明細
+        Column(
+            Modifier.weight(1.15f).fillMaxHeight()
+                .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("📋 各區塊近三個月趨勢 ＋ 去年同期比較",
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (periodNote.isNotEmpty()) {
+                Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            items.forEachIndexed { i, s ->
+                IncomeSliceCard(s, i, total)
+            }
+        }
+        // 右方：圓餅圖
+        Column(
+            Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            PieChart(data, height = 150.dp)
+        }
+    }
+}
+
+/** 圓餅單一區塊明細卡(近三個月趨勢 + 去年同期增減)。 */
+@Composable
+private fun IncomeSliceCard(s: DashboardRepo.IncomeSliceStat, index: Int, total: Double) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(seriesColor(s.label, index)))
+                Spacer(Modifier.width(6.dp))
+                Text(s.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f), maxLines = 1)
+                Text(String.format("%.1f%%", s.value / total * 100),
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            // 近三個月變化趨勢
+            val present = s.recent3.filterNotNull()
+            if (present.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("近三個月", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline, modifier = Modifier.weight(1f))
+                    Text(
+                        s.recent3.joinToString(" → ") { v -> if (v != null) Fmt.money(v) else "—" },
+                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold
+                    )
+                    if (present.size >= 2 && present[present.size - 2] != 0.0) {
+                        Spacer(Modifier.width(8.dp))
+                        val d = (present.last() - present[present.size - 2]) / present[present.size - 2] * 100.0
+                        val up = d >= 0
+                        Text(
+                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                        )
+                    }
+                }
+            }
+            // 去年同期增減
+            Row(Modifier.fillMaxWidth().padding(top = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("去年同期", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline, modifier = Modifier.weight(1f))
+                if (s.prior != null) {
+                    Text(Fmt.money(s.prior), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.width(8.dp))
+                    if (s.deltaPct != null) {
+                        val up = s.deltaPct >= 0
+                        Text(
+                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", s.deltaPct),
+                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                        )
+                    } else {
+                        Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                } else {
+                    Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
             }
         }
     }

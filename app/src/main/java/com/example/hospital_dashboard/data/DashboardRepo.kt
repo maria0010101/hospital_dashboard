@@ -1148,6 +1148,71 @@ class DashboardRepo(private val db: HospitalDb) {
         }
     }
 
+    /** 收入圓餅單一區塊明細(近三個月趨勢 + 去年同期比較)。 */
+    class IncomeSliceStat(
+        val label: String,
+        val value: Double,           // 錨點月金額
+        val recent3: List<Double?>,  // 近三個月(由舊到新，含錨點月)
+        val prior: Double?,          // 去年同期同月
+        val deltaPct: Double?        // 去年同期增減(%)
+    )
+
+    /** 當月收入結構圓餅各區塊明細：近三個月變化趨勢 + 去年同期增減。 */
+    fun physIncomeSliceDetail(f: Filters): List<IncomeSliceStat> {
+        val a = anchorYm(f) ?: return emptyList()
+        val yms = recent3Yms(f)
+        val (py, pm) = monthBack(a.first, a.second, 12)
+        val cols = listOf(
+            "門診健保收入" to "opd_nhi_income",
+            "門診自費收入" to "opd_selfpay_income",
+            "住院健保收入" to "ipd_nhi_income",
+            "住院自費收入" to "ipd_selfpay_income"
+        )
+        // 與 physIncomePie 相同之篩選範圍(院區/部別/科別)
+        val parts = mutableListOf<String>()
+        val params = mutableListOf<Any?>()
+        if (f.branches.isNotEmpty()) {
+            parts.add("branch_name IN (${f.branches.joinToString(",") { "?" }})")
+            params.addAll(f.branches)
+        }
+        if (f.deptDivs.isNotEmpty()) {
+            parts.add("dept_div IN (${f.deptDivs.joinToString(",") { "?" }})")
+            params.addAll(f.deptDivs)
+        }
+        if (f.depts.isNotEmpty()) {
+            parts.add("dept IN (${f.depts.joinToString(",") { "?" }})")
+            params.addAll(f.depts)
+        }
+        val extra = parts.joinToString(" AND ")
+        val extraSql = if (extra.isEmpty()) "" else " AND $extra"
+        val sel = cols.joinToString(", ") { (_, col) -> "SUM(CAST($col AS REAL))" }
+
+        // 近三個月(由舊到新)
+        val (ymc, ymp) = ymInCond(yms)
+        val rows = db.query(
+            "SELECT year, month, $sel FROM physician_service WHERE $ymc$extraSql GROUP BY year, month",
+            arrayOf(*ymp, *params.toTypedArray()))
+        val ymMap = HashMap<Int, Array<Double>>()
+        for (r in rows) {
+            val y = r[0]?.toString()?.toIntOrNull() ?: 0
+            val m = r[1]?.toString()?.toIntOrNull() ?: 0
+            ymMap[y * 100 + m] = Array(cols.size) { i -> num(r[2 + i]) ?: 0.0 }
+        }
+        // 去年同期同月
+        val priorRow = db.query(
+            "SELECT $sel FROM physician_service WHERE year=? AND month=?$extraSql",
+            arrayOf(py.toString(), pm.toString(), *params.toTypedArray())).firstOrNull()
+        val priorArr = priorRow?.let { r -> Array(cols.size) { i -> num(r[i]) ?: 0.0 } }
+
+        return cols.mapIndexed { i, (label, _) ->
+            val trend = yms.map { (y, m) -> ymMap[y * 100 + m]?.get(i) }
+            val cur = trend.lastOrNull() ?: 0.0
+            val prior = priorArr?.get(i)
+            val delta = if (prior != null && prior != 0.0 && cur != 0.0) (cur - prior) / prior * 100.0 else null
+            IncomeSliceStat(label, cur, trend, prior, delta)
+        }
+    }
+
     // ══════════ 近三個月趨勢(點擊細項用) ═════════════
     /** 將 (group, year, month, value) 列轉為 group → 依 yms 對齊的 3 個月數值。 */
     private fun buildRecentMap(rows: List<List<Any?>>, yms: List<Pair<Int, Int>>, valIdx: Int): Map<String, List<Double?>> {
