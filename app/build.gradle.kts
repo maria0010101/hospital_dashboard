@@ -13,14 +13,16 @@ android {
         applicationId = "com.example.hospital_dashboard"
         minSdk = 24
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.3"
+        versionCode = 3
+        versionName = "0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
+            // 沿用既有發布慣例：以 debug keystore 簽章（歷史 v0.1–v0.3 同憑證）
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = false
             }
