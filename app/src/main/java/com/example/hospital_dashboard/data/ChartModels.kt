@@ -10,11 +10,12 @@ data class LineChartData(val xLabels: List<String>, val series: List<LineSeries>
 /** 橫條圖：每一列可含多段(群組或堆疊)。 */
 data class BarSegment(val label: String, val value: Double)
 
-data class HBarRow(val name: String, val segments: List<BarSegment>)
+data class HBarRow(val name: String, val segments: List<BarSegment>, val trailing: String? = null)
 
 data class HBarData(
     val rows: List<HBarRow>,
     val grouped: Boolean = false,
+    val overlap: Boolean = false, // 重疊橫條(兩段同起點，第二段疊於第一段上方)
     val targetLine: Double? = null // 目標線(如 85% 佔床率)
 ) {
     companion object { val EMPTY = HBarData(emptyList()) }
@@ -80,6 +81,10 @@ object Fmt {
         kotlin.math.abs(v) >= 1e4 -> String.format("%.1f萬", v / 1e4)
         else -> String.format("%,.0f", v)
     }
+
+    /** 金額以「千元」為單位顯示。 */
+    fun moneyK(v: Double): String =
+        if (v.isNaN()) "-" else String.format("%,.0f", v / 1000.0)
 
     fun percent(v: Double): String = String.format("%.1f%%", v)
 

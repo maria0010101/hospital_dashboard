@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -111,10 +112,18 @@ fun seriesColor(name: String, index: Int): Color =
 
 // ── 圖表內容(可全螢幕橫向放大檢視) ──────────────────
 /** 橫條圖點擊列的明細模式。 */
-enum class HBarClick { None, DeptBranch, BranchDept }
+enum class HBarClick { None, DeptBranch, BranchDept, BedBranch, BranchIncome }
 
 /** 直條圖點擊長條的明細模式。 */
-enum class VBarClick { None, DeptBranch, PhysDept, BranchIncome }
+enum class VBarClick { None, DeptBranch, PhysDept, BranchIncome, OpsMonth }
+
+/** 點擊月份/列後帶出的「各院區多指標明細」定義。 */
+data class BranchMetricDef(
+    val sheetTitle: String,
+    val table: String,
+    val metrics: List<Pair<String, String>>, // (顯示名, SQL SUM 算式)
+    val fmt: (Double) -> String = Fmt::compact
+)
 
 sealed class ChartContent {
     abstract val title: String
@@ -122,21 +131,24 @@ sealed class ChartContent {
     data class Line(
         override val title: String,
         val data: LineChartData,
-        val yFormatter: (Double) -> String = Fmt::compact
+        val yFormatter: (Double) -> String = Fmt::compact,
+        val monthDef: BranchMetricDef? = null // 點月份 → 各院區多指標明細卡
     ) : ChartContent()
 
     data class HBar(
         override val title: String,
         val data: HBarData,
         val valueFormatter: (Double) -> String = Fmt::compact,
-        val clickAction: HBarClick = HBarClick.None // 點擊列 → 科別各院區 / 院區各科別
+        val clickAction: HBarClick = HBarClick.None, // 點擊列 → 科別各院區 / 院區各科別 / 病床 / 收入
+        val branchMetricDef: BranchMetricDef? = null // BranchIncome 用：收入明細定義
     ) : ChartContent()
 
     data class VBar(
         override val title: String,
         val data: VBarData,
         val valueFormatter: (Double) -> String = Fmt::compact,
-        val click: VBarClick = VBarClick.None // 點擊長條 → 科別各院區 / 科別醫師服務量 / 各院區收入
+        val click: VBarClick = VBarClick.None, // 點擊長條 → 科別各院區 / 科別醫師 / 各院區收入 / 月份指標
+        val monthDef: BranchMetricDef? = null  // OpsMonth 用：月份各院區明細定義
     ) : ChartContent()
 
     data class Pie(override val title: String, val data: PieData) : ChartContent()
@@ -245,22 +257,44 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
 
             when (content) {
                 is ChartContent.Line -> {
-                    ZoomableBox {
+                    var metricYm by remember(content) { mutableStateOf<Int?>(null) }
+                    XWindowZoom(content.data.xLabels.size) { win ->
                         LineChart(
                             content.data,
                             height = chartHeight.coerceAtLeast(160.dp),
                             yFormatter = content.yFormatter,
                             interactive = true,
-                            onPointSelected = { pointInfo = it }
+                            window = win,
+                            onPointSelected = { info ->
+                                if (content.monthDef != null) {
+                                    info?.xLabel?.let { l ->
+                                        parseYmLabel(l)?.let { (y, mo) -> metricYm = y * 100 + mo }
+                                    }
+                                } else {
+                                    pointInfo = info
+                                }
+                            }
                         )
                     }
-                    // 點擊資料點 → 詳細數據工具卡(固定不隨縮放)
-                    pointInfo?.let { info ->
-                        LineTooltipCard(
-                            info, content.yFormatter,
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            onDismiss = { pointInfo = null }
-                        )
+                    val def = content.monthDef
+                    if (def != null) {
+                        // 點月份 → 各院區多指標明細(近三個月 + 去年同期)
+                        metricYm?.let { ym ->
+                            MetricOverlayCard(
+                                vm, def, ym, null,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { metricYm = null }
+                            )
+                        }
+                    } else {
+                        // 點擊資料點 → 詳細數據工具卡(固定不隨縮放)
+                        pointInfo?.let { info ->
+                            LineTooltipCard(
+                                info, content.yFormatter,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { pointInfo = null }
+                            )
+                        }
                     }
                 }
                 is ChartContent.HBar -> {
@@ -294,23 +328,57 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                                 onDismiss = { selectedRow = null }
                             )
                         }
+                        HBarClick.BedBranch -> selectedRow?.let { branch ->
+                            BedBranchCard(
+                                vm, branch,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedRow = null }
+                            )
+                        }
+                        HBarClick.BranchIncome -> selectedRow?.let { branch ->
+                            content.branchMetricDef?.let { def ->
+                                MetricOverlayCard(
+                                    vm, def, null, branch,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                        }
                         HBarClick.None -> {}
                     }
                 }
                 is ChartContent.VBar -> {
                     var selectedLabel by remember(content) { mutableStateOf<String?>(null) }
-                    ZoomableBox {
-                        VBarChart(
-                            content.data,
-                            height = chartHeight.coerceAtLeast(160.dp),
-                            valueFormatter = content.valueFormatter,
-                            interactive = content.click != VBarClick.None,
-                            onBarSelected = { idx ->
-                                if (content.click != VBarClick.None) {
-                                    selectedLabel = content.data.groups.getOrNull(idx)?.label
+                    if (content.monthDef != null) {
+                        // 月份 X 軸(手術/生產等)：視窗縮放，縮放後顯示更多標籤
+                        XWindowZoom(content.data.groups.size) { win ->
+                            VBarChart(
+                                content.data,
+                                height = chartHeight.coerceAtLeast(160.dp),
+                                valueFormatter = content.valueFormatter,
+                                interactive = content.click != VBarClick.None,
+                                window = win,
+                                onBarSelected = { idx ->
+                                    if (content.click != VBarClick.None) {
+                                        selectedLabel = content.data.groups.getOrNull(idx)?.label
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
+                    } else {
+                        ZoomableBox {
+                            VBarChart(
+                                content.data,
+                                height = chartHeight.coerceAtLeast(160.dp),
+                                valueFormatter = content.valueFormatter,
+                                interactive = content.click != VBarClick.None,
+                                onBarSelected = { idx ->
+                                    if (content.click != VBarClick.None) {
+                                        selectedLabel = content.data.groups.getOrNull(idx)?.label
+                                    }
+                                }
+                            )
+                        }
                     }
                     when (content.click) {
                         // 點擊科別長條 → 各院區明細(含去年同期 + 近三個月趨勢)
@@ -332,12 +400,39 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                                 IncomeDetailSheet(vm, ym, onDismiss = { selectedLabel = null })
                             }
                         }
+                        // 點月份長條 → 該月各院區手術/生產明細(近三個月 + 去年同期)
+                        VBarClick.OpsMonth -> selectedLabel?.let { label ->
+                            val def = content.monthDef
+                            val ym = parseYmLabel(label)?.let { (y, m) -> y * 100 + m }
+                            if (def != null && ym != null) {
+                                MetricOverlayCard(
+                                    vm, def, ym, null,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedLabel = null }
+                                )
+                            }
+                        }
                         VBarClick.None -> {}
                     }
                 }
                 is ChartContent.Pie -> PieZoomLayout(vm, content.data)
-                is ChartContent.Table ->
-                    TableZoom(content.data)
+                is ChartContent.Table -> {
+                    // 去年同期佔床率比較表：點類別列 → 各院區實際佔床率明細
+                    var drillCat by remember(content) { mutableStateOf<String?>(null) }
+                    TableZoom(
+                        content.data,
+                        onRowClick = if (content.title.contains("去年同期")) {
+                            { i -> content.data.rows.getOrNull(i)?.firstOrNull()?.text?.let { drillCat = it } }
+                        } else null
+                    )
+                    drillCat?.let { cat ->
+                        BedCategoryCard(
+                            vm, cat,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            onDismiss = { drillCat = null }
+                        )
+                    }
+                }
             }
 
         }
@@ -358,6 +453,51 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                 .padding(vertical = 4.dp),
             textAlign = TextAlign.Center
         )
+    }
+}
+
+/** X 軸視窗縮放容器：縮放/拖曳對應到 x 索引區段並重繪(縮放後可顯示更多 X 軸標籤)。 */
+@Composable
+private fun XWindowZoom(n: Int, content: @Composable (IntRange) -> Unit) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var startF by remember { mutableFloatStateOf(0f) } // 視窗起點佔全長比例
+    var widthPx by remember { mutableIntStateOf(0) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { widthPx = it.width }
+            .pointerInput(n, widthPx) {
+                detectTransformGestures { centroid, pan, zoom, _ ->
+                    val maxScale = (n / 2.0).coerceAtLeast(1.0).toFloat()
+                    val ns = (scale * zoom).coerceIn(1f, maxScale)
+                    if (widthPx > 0 && ns != scale) {
+                        val f = (centroid.x / widthPx).coerceIn(0f, 1f)
+                        val oldWin = 1f / scale
+                        val newWin = 1f / ns
+                        startF = (f - (f - startF) * (oldWin / newWin)).coerceIn(0f, 1f - newWin)
+                    }
+                    if (widthPx > 0) {
+                        val win = 1f / ns
+                        startF = (startF - pan.x / widthPx * win).coerceIn(0f, 1f - win)
+                    }
+                    scale = ns
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onDoubleTap = {
+                    if (scale > 1f) { scale = 1f; startF = 0f }
+                    else { scale = 2.5f; startF = (1f - 1f / 2.5f) / 2f }
+                })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        val maxIdx = (n - 1).coerceAtLeast(0)
+        val winFrac = 1f / scale
+        var lo = (startF * maxIdx).toInt().coerceIn(0, maxIdx)
+        var hi = ((startF + winFrac) * maxIdx).toInt().coerceIn(0, maxIdx)
+        if (hi <= lo) hi = (lo + 1).coerceAtMost(maxIdx)
+        if (hi <= lo) lo = (hi - 1).coerceAtLeast(0)
+        content(lo..hi)
     }
 }
 
@@ -401,7 +541,7 @@ private fun ZoomableBox(content: @Composable () -> Unit) {
 
 /** 表格類內容：橫向全螢幕 + 可捲動。 */
 @Composable
-private fun TableZoom(data: TableData) {
+private fun TableZoom(data: TableData, onRowClick: ((Int) -> Unit)? = null) {
     Column(
         Modifier
             .fillMaxSize()
@@ -409,7 +549,7 @@ private fun TableZoom(data: TableData) {
             .verticalScroll(rememberScrollState())
     ) {
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            DataTable(data, Modifier.width(960.dp))
+            DataTable(data, Modifier.width(960.dp), onRowClick)
         }
     }
 }
@@ -650,6 +790,243 @@ private fun BranchDeptCard(
                         }
                     }
                     Recent3Line(recent3[s.dept] ?: emptyList(), Fmt::compact)
+                }
+            }
+        }
+    }
+}
+
+/** 病床明細卡：某院區實際佔床率近三月趨勢 + 去年同期（點病床橫條後顯示）。 */
+@Composable
+private fun BedBranchCard(
+    vm: DashboardViewModel,
+    branch: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val data by produceState<Pair<List<DashboardRepo.BedMonthTrend>, Double?>?>(null, branch) {
+        value = withContext(Dispatchers.IO) {
+            vm.repo.bedBranchTrend(vm.filters.value, emptyList(), branch)
+        }
+    }
+    Card(
+        modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .background(Color.White),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🛏️ $branch 實際佔床率（近三個月與去年同期）",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+            }
+            val d = data
+            if (d == null || d.first.isEmpty()) {
+                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            } else {
+                d.first.forEachIndexed { i, t ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(t.label, style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f))
+                        Text("實開 ${Fmt.int(t.openBeds)} 床", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.width(8.dp))
+                        Text(Fmt.percent(t.actOcc), style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold)
+                    }
+                    if (i == 0) {
+                        // 最新月與去年同期比較
+                        val prior = d.second
+                        if (prior != null) {
+                            val delta = t.actOcc - prior
+                            val up = delta >= 0
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("去年同期 ${Fmt.percent(prior)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    (if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 病床類別明細卡：點去年同期比較表的類別列 → 各院區實際佔床率(近三個月 + 去年同月)。 */
+@Composable
+private fun BedCategoryCard(
+    vm: DashboardViewModel,
+    category: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val rows by produceState<List<DashboardRepo.BedCatBranchRow>?>(null, category) {
+        value = withContext(Dispatchers.IO) {
+            vm.repo.bedCategoryBranchDetail(vm.filters.value, category)
+        }
+    }
+    Card(
+        modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .background(Color.White),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("🛏️ 病床類別「$category」各院區實際佔床率",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                    maxLines = 1, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+            }
+            val r = rows
+            if (r == null || r.isEmpty()) {
+                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 320.dp)) {
+                    r.forEach { row ->
+                        Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold)
+                        val anchor = row.trend.lastOrNull()
+                        if (anchor != null) {
+                            Row(Modifier.fillMaxWidth().padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text("近三個月 ", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline)
+                                Text(
+                                    row.trend.joinToString(" → ") { Fmt.percent(it.actOcc) },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.weight(1f))
+                                Text(Fmt.percent(anchor.actOcc),
+                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            }
+                            val prior = row.prior
+                            if (prior != null) {
+                                val delta = anchor.actOcc - prior
+                                val up = delta >= 0
+                                Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Text("去年同期 ${Fmt.percent(prior)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text((if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
+                                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 多指標明細浮層卡：指定月份(各院區)或指定院區的多指標數值＋近三個月趨勢＋去年同期。 */
+@Composable
+private fun MetricOverlayCard(
+    vm: DashboardViewModel,
+    def: BranchMetricDef,
+    ym: Int?,      // 指定月份(null = 以錨點月帶入，用於院區收入列)
+    branch: String?, // null = 列出全院區
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val rows by produceState<List<DashboardRepo.BranchMetricRow>?>(null, ym, branch) {
+        value = withContext(Dispatchers.IO) {
+            val f = vm.filters.value
+            val m = ym ?: vm.repo.anchorYm(f)?.let { it.first * 100 + it.second } ?: return@withContext null
+            vm.repo.branchMonthMetrics(f, m, def.table, def.metrics, branch)
+        }
+    }
+    val label = when {
+        ym != null -> (ym / 100).toString() + "年" + (ym % 100).toString().padStart(2, '0') + "月"
+        branch != null -> branch
+        else -> ""
+    }
+    Card(
+        modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .background(Color.White),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${def.sheetTitle}${if (label.isNotEmpty()) "（$label）" else ""}",
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+            }
+            val r = rows
+            if (r == null) {
+                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
+                    r.forEachIndexed { i, row ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        }
+                        row.metricNames.forEachIndexed { mi, name ->
+                            val v = row.cur.getOrElse(mi) { 0.0 }
+                            val p = row.prior.getOrElse(mi) { null }
+                            val tr = row.trend3.getOrElse(mi) { emptyList() }
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 8.dp, top = 1.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(name, style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f))
+                                if (p != null && p != 0.0 && v != 0.0) {
+                                    val d = (v - p) / p * 100.0
+                                    val up = d >= 0
+                                    Text((if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("去年 ${def.fmt(p)}", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(def.fmt(v), style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold)
+                            }
+                            Recent3Line(tr, def.fmt, prefix = name)
+                        }
+                        if (i < r.size - 1) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    }
                 }
             }
         }
@@ -1100,19 +1477,26 @@ private suspend fun AwaitPointerEventScope.passiveTapListener(onTap: (Offset) ->
 }
 
 /** 依點擊位置找最近的資料點(只以本期序列為目標)，回傳該 x 的全部序列明細。 */
-private fun findNearestPoint(data: LineChartData, tap: Offset, size: IntSize, density: Density): PointInfo? {
+private fun findNearestPoint(
+    data: LineChartData, tap: Offset, size: IntSize, density: Density,
+    w0: Int = 0, w1: Int = Int.MAX_VALUE
+): PointInfo? {
     if (size.width <= 0 || size.height <= 0) return null
-    val geo = computeLineGeo(Size(size.width.toFloat(), size.height.toFloat()), data, density)
     val n = data.xLabels.size
-    val xSpacing = geo.chartW / (n - 1).coerceAtLeast(1)
+    val lo = w0.coerceIn(0, (n - 1).coerceAtLeast(0))
+    val hi = w1.coerceIn(lo, (n - 1).coerceAtLeast(lo))
+    val cnt = (hi - lo).coerceAtLeast(1)
+    val geo = computeLineGeo(Size(size.width.toFloat(), size.height.toFloat()), data, density)
+    fun xFor(i: Int): Float = geo.labelW + geo.chartW * (i - lo) / cnt.toFloat()
+    val xSpacing = geo.chartW / cnt.toFloat().coerceAtLeast(1f)
 
     var bestIdx = -1
     var bestDist = Float.MAX_VALUE
     for (s in data.series) {
         if (s.dashed) continue
-        for (xi in s.values.indices) {
-            val v = s.values[xi] ?: continue
-            val dx = tap.x - geo.xPos(xi, n)
+        for (xi in lo..hi) {
+            val v = s.values.getOrNull(xi) ?: continue
+            val dx = tap.x - xFor(xi)
             if (abs(dx) > xSpacing * 0.6f) continue // 需靠近該 x 欄位
             val dy = tap.y - geo.yPos(v)
             if (abs(dy) > 90f) continue // 需靠近線條(離線太遠不選點)
@@ -1157,11 +1541,17 @@ fun LineChart(
     height: Dp = 220.dp,
     yFormatter: (Double) -> String = Fmt::compact,
     interactive: Boolean = false,
-    onPointSelected: ((PointInfo?) -> Unit)? = null
+    onPointSelected: ((PointInfo?) -> Unit)? = null,
+    window: IntRange? = null // 僅繪製 [window] 的 x 區段並伸展至全寬(縮放後可顯示更多標籤)
 ) {
     if (data.xLabels.isEmpty() || data.series.isEmpty()) {
         EmptyHint(); return
     }
+    val nFull = data.xLabels.size
+    val w0 = (window?.first ?: 0).coerceIn(0, nFull - 1)
+    val w1 = (window?.last ?: nFull - 1).coerceIn(0, nFull - 1).coerceAtLeast(w0)
+    if (w0 > w1) { EmptyHint(); return }
+    val wCnt = (w1 - w0).coerceAtLeast(1)
     Column {
         Legend(data.series.map { it.name })
         Spacer(Modifier.height(4.dp))
@@ -1176,11 +1566,11 @@ fun LineChart(
                 .height(height)
                 .onSizeChanged { canvasSize = it }
                 .then(
-                    if (interactive) Modifier.pointerInput(data, canvasSize) {
+                    if (interactive) Modifier.pointerInput(data, canvasSize, w0, w1) {
                         awaitPointerEventScope {
                             passiveTapListener { pos ->
                                 onPointSelected?.invoke(
-                                    findNearestPoint(data, pos, canvasSize, density)
+                                    findNearestPoint(data, pos, canvasSize, density, w0, w1)
                                 )
                             }
                         }
@@ -1189,6 +1579,8 @@ fun LineChart(
         ) {
             val geo = computeLineGeo(size, data, this)
             val labelH = 16.dp.toPx()
+            // x 座標：依視窗區段伸展至全寬
+            fun xFor(i: Int): Float = geo.labelW + geo.chartW * (i - w0) / wCnt.toFloat()
 
             // 水平網格 + Y 標籤
             val gridN = 4
@@ -1200,23 +1592,47 @@ fun LineChart(
                 drawText(textMeasurer, yFormatter(v), topLeft = Offset(2.dp.toPx(), y - labelH / 2), style = labelStyle)
             }
 
-            // X 標籤(最多 6 個)
-            val n = data.xLabels.size
-            val step = max(1, n / 6)
-            for (i in 0 until n step step) {
-                val x = geo.xPos(i, n)
-                drawText(textMeasurer, data.xLabels[i], topLeft = Offset(x - 18.dp.toPx(), size.height - geo.bottomH + 2.dp.toPx()), style = labelStyle)
+            // X 標籤：民國年月，依標籤實測寬度自適應間距，避免重疊（縮放後視窗變窄 → 可顯示更多標籤）
+            val xSpacing = geo.chartW / wCnt.toFloat().coerceAtLeast(1f)
+            val pad = 6.dp.toPx()
+            val maxW = (w0..w1).maxOfOrNull {
+                textMeasurer.measure(AnnotatedString(data.xLabels[it]), labelStyle).size.width
+            } ?: 0
+            val step = max(1, kotlin.math.ceil((maxW + pad) / xSpacing.coerceAtLeast(1f)).toInt())
+            var prevRight = -1e9f
+            var lastDrawn = -1
+            var i = w0
+            while (i <= w1) {
+                val x = xFor(i)
+                val tw = textMeasurer.measure(AnnotatedString(data.xLabels[i]), labelStyle).size.width
+                val left = (x - tw / 2).coerceAtLeast(0f)
+                if (left >= prevRight + pad) {
+                    drawText(textMeasurer, data.xLabels[i],
+                        topLeft = Offset(left, size.height - geo.bottomH + 2.dp.toPx()), style = labelStyle)
+                    prevRight = left + tw
+                    lastDrawn = i
+                }
+                i += step
+            }
+            if (w1 != lastDrawn && w1 > w0) {
+                val x = xFor(w1)
+                val tw = textMeasurer.measure(AnnotatedString(data.xLabels[w1]), labelStyle).size.width
+                val left = (x - tw / 2).coerceAtLeast(0f)
+                if (left >= prevRight + pad)
+                    drawText(textMeasurer, data.xLabels[w1],
+                        topLeft = Offset(left, size.height - geo.bottomH + 2.dp.toPx()), style = labelStyle)
             }
 
-            // 序列
+            // 序列（僅視窗範圍）
             data.series.forEachIndexed { si, s ->
                 val color = seriesColor(s.name, si)
                 val dash = if (s.dashed) PathEffect.dashPathEffect(floatArrayOf(10f, 10f)) else null
                 val path = androidx.compose.ui.graphics.Path()
                 var started = false
-                s.values.forEachIndexed { i, v ->
+                for (idx in w0..w1) {
+                    val v = s.values.getOrNull(idx)
                     if (v != null) {
-                        val x = geo.xPos(i, n); val y = geo.yPos(v)
+                        val x = xFor(idx); val y = geo.yPos(v)
                         if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
                         if (!s.dashed) drawCircle(color, radius = 2.6.dp.toPx(), center = Offset(x, y))
                     } else started = false
@@ -1253,6 +1669,7 @@ fun HBarChart(
     if (data.rows.isEmpty()) { EmptyHint(); return }
     val segNames = data.rows.flatMap { it.segments.map { s -> s.label } }.distinct()
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val outlineColor = MaterialTheme.colorScheme.outline
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     Column {
@@ -1282,7 +1699,10 @@ fun HBarChart(
             val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
             val chartW = size.width - nameW - gap - 6.dp.toPx()
 
-            val maxVal = data.rows.flatMap { it.segments.map { s -> s.value } }.maxOrNull()?.coerceAtLeast(1e-9) ?: 1.0
+            // 刻度：群組/重疊圖取最大分段值；累計/堆疊圖取「整列總和」，避免超長條溢出色繪區
+            val maxSeg = data.rows.flatMap { it.segments.map { s -> s.value } }.maxOrNull()?.coerceAtLeast(1e-9) ?: 1.0
+            val maxTotal = data.rows.maxOfOrNull { r -> r.segments.sumOf { it.value } }?.coerceAtLeast(1e-9) ?: 1.0
+            val maxVal = if (data.grouped || data.overlap) maxSeg else maxTotal
             val target = data.targetLine
             val scaleMax = max(maxVal, target ?: 0.0) * 1.15
 
@@ -1296,11 +1716,13 @@ fun HBarChart(
                 drawText(textMeasurer, "目標 $target", topLeft = Offset(nameW + gap + tx + 3.dp.toPx(), 2.dp.toPx()), style = targetStyle)
             }
 
+            val lblStyle = TextStyle(fontSize = 9.sp, color = onSurfaceColor)
             data.rows.forEachIndexed { ri, row ->
                 val y = topPad + ri * barH
                 drawText(textMeasurer, row.name, topLeft = Offset(2.dp.toPx(), y + barH / 2 - 7.dp.toPx()), style = nameStyle)
 
-                val barW = xOf(row.segments.sumOf { it.value })
+                val rowTotal = row.segments.sumOf { it.value }
+                val barW = xOf(rowTotal)
                 val colors = row.segments.mapIndexed { si, _ -> seriesColor(row.segments[si].label, si) }
                 if (data.grouped) {
                     // 群組：各段並排
@@ -1312,20 +1734,85 @@ fun HBarChart(
                             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
                         if (w > 30.dp.toPx()) drawText(textMeasurer, valueFormatter(s.value), topLeft = Offset(x + 3.dp.toPx(), y + barH / 2 - 7.dp.toPx()), style = valStyle)
                     }
+                } else if (data.overlap && row.segments.size >= 2) {
+                    // 重疊橫條：兩段皆以座標原點起算，第二段(實際)疊於第一段(登記)上方
+                    val s0 = row.segments[0]
+                    val s1 = row.segments[1]
+                    val w0 = xOf(s0.value)
+                    val w1 = xOf(s1.value)
+                    val bh = barH - 6.dp.toPx()
+                    val x0 = nameW + gap
+                    // 底層：第一段(登記)淡色全高
+                    drawRect(colors[0].copy(alpha = 0.45f), Offset(x0, y + 3.dp.toPx()),
+                        Size(w0.coerceAtLeast(1f), bh))
+                    // 上層：第二段(實際)同起點、置於上緣(高度 62%)，疊加於登記之上
+                    drawRect(colors[1], Offset(x0, y + 3.dp.toPx()),
+                        Size(w1.coerceAtLeast(1f), bh * 0.62f))
+                    if (w1 > 44.dp.toPx()) {
+                        val lbl = valueFormatter(s1.value)
+                        val tw = textMeasurer.measure(AnnotatedString(lbl), valStyle).size.width
+                        if (tw < w1 - 6.dp.toPx())
+                            drawText(textMeasurer, lbl,
+                                topLeft = Offset(x0 + (w1 - tw) / 2, y + 3.dp.toPx() + bh * 0.62f / 2 - 7.dp.toPx()),
+                                style = valStyle)
+                    }
+                    // 條尾：登記床數值 + 開床率（超出畫布寬時省略，避免文字重疊裁切）
+                    val endX = x0 + w0.coerceAtLeast(w1) + 4.dp.toPx()
+                    val headStyle = TextStyle(fontSize = 9.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
+                    val vtxt = valueFormatter(s0.value)
+                    val vw = textMeasurer.measure(AnnotatedString(vtxt), headStyle).size.width
+                    if (vw < size.width - endX) {
+                        drawText(textMeasurer, vtxt, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = headStyle)
+                        val tx = endX + vw + 8.dp.toPx()
+                        if (row.trailing != null) {
+                            val tr = row.trailing
+                            val trw = textMeasurer.measure(AnnotatedString(tr),
+                                TextStyle(fontSize = 9.sp, color = outlineColor)).size.width
+                            if (trw < size.width - tx)
+                                drawText(textMeasurer, tr, topLeft = Offset(tx, y + barH / 2 - 7.dp.toPx()),
+                                    style = TextStyle(fontSize = 9.sp, color = outlineColor))
+                        }
+                    }
                 } else {
-                    // 堆疊或單段
+                    // 累計/堆疊或單段：各段緊密相連(以 drawRect 避免圓角造成分段分離)，段寬足時於段內標示數值
                     var acc = 0f
                     row.segments.forEachIndexed { si, s ->
                         val x = nameW + gap + acc
                         val w = xOf(s.value)
-                        drawRoundRect(colors[si], Offset(x, y + 3.dp.toPx()), Size(w.coerceAtLeast(1f), barH - 6.dp.toPx()),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+                        drawRect(colors[si], Offset(x, y + 3.dp.toPx()), Size(w.coerceAtLeast(1f), barH - 6.dp.toPx()))
+                        if (w > 42.dp.toPx() && row.segments.size > 1) {
+                            val lbl = valueFormatter(s.value)
+                            val tw = textMeasurer.measure(AnnotatedString(lbl), valStyle).size.width
+                            if (tw < w - 8.dp.toPx())
+                                drawText(textMeasurer, lbl, topLeft = Offset(x + (w - tw) / 2, y + barH / 2 - 7.dp.toPx()), style = valStyle)
+                        }
                         acc += w
                     }
-                    if (barW > 34.dp.toPx() && row.segments.size == 1) {
-                        drawText(textMeasurer, valueFormatter(row.segments[0].value),
-                            topLeft = Offset(nameW + gap + barW + 4.dp.toPx(), y + barH / 2 - 7.dp.toPx()),
-                            style = TextStyle(fontSize = 9.sp, color = onSurfaceColor))
+                    if (row.segments.size == 1) {
+                        val endX = nameW + gap + barW + 4.dp.toPx()
+                        if (row.trailing == null) {
+                            if (barW > 34.dp.toPx())
+                                drawText(textMeasurer, valueFormatter(row.segments[0].value), topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = lblStyle)
+                        } else {
+                            // 數值 + 後端補充數據(如平均每診人次)
+                            var cx = endX
+                            if (barW > 34.dp.toPx()) {
+                                val vtxt = valueFormatter(row.segments[0].value)
+                                drawText(textMeasurer, vtxt, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()), style = lblStyle)
+                                cx += textMeasurer.measure(AnnotatedString(vtxt), lblStyle).size.width + 8.dp.toPx()
+                            }
+                            drawText(textMeasurer, row.trailing, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()),
+                                style = TextStyle(fontSize = 9.sp, color = outlineColor))
+                        }
+                    } else if (barW > 20.dp.toPx()) {
+                        // 累計長條尾端標示整列總和(寬度不足時省略，避免超出畫布)
+                        val lbl = valueFormatter(rowTotal)
+                        val tw = textMeasurer.measure(AnnotatedString(lbl),
+                            TextStyle(fontSize = 9.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)).size.width
+                        val endX = nameW + gap + barW + 4.dp.toPx()
+                        if (tw < size.width - endX)
+                            drawText(textMeasurer, lbl, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()),
+                                style = TextStyle(fontSize = 9.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold))
                     }
                 }
             }
@@ -1336,8 +1823,15 @@ fun HBarChart(
 // ── 直條圖 ───────────────────────────────────────────
 
 /** 依點擊位置找直條圖的群組索引。 */
-private fun findBarIndex(data: VBarData, tap: Offset, size: IntSize, density: Density): Int? {
+private fun findBarIndex(
+    data: VBarData, tap: Offset, size: IntSize, density: Density,
+    lo: Int = 0, hi: Int = Int.MAX_VALUE
+): Int? {
     if (size.width <= 0 || size.height <= 0 || data.groups.isEmpty()) return null
+    val n = data.groups.size
+    val l = lo.coerceIn(0, (n - 1).coerceAtLeast(0))
+    val h = hi.coerceIn(l, (n - 1).coerceAtLeast(l))
+    val cnt = (h - l).coerceAtLeast(1)
     val labelW = with(density) { 46.dp.toPx() }
     val bottomH = with(density) { 18.dp.toPx() }
     val topPad = with(density) { 10.dp.toPx() }
@@ -1345,8 +1839,8 @@ private fun findBarIndex(data: VBarData, tap: Offset, size: IntSize, density: De
     val chartH = size.height - bottomH - topPad
     if (tap.x < labelW || tap.x > labelW + chartW) return null
     if (tap.y < topPad || tap.y > topPad + chartH) return null
-    val n = data.groups.size
-    val idx = ((tap.x - labelW) / (chartW / n)).toInt().coerceIn(0, n - 1)
+    val frac = ((tap.x - labelW) / chartW).coerceIn(0f, 1f)
+    val idx = (l + frac * cnt).toInt().coerceIn(l, h)
     return idx
 }
 
@@ -1356,9 +1850,13 @@ fun VBarChart(
     height: Dp = 240.dp,
     valueFormatter: (Double) -> String = Fmt::compact,
     interactive: Boolean = false,
-    onBarSelected: ((Int) -> Unit)? = null
+    onBarSelected: ((Int) -> Unit)? = null,
+    window: IntRange? = null // 僅繪製 [window] 區段並伸展至全寬(縮放後可顯示更多標籤)
 ) {
     if (data.groups.isEmpty()) { EmptyHint(); return }
+    val nFull = data.groups.size
+    val v0 = (window?.first ?: 0).coerceIn(0, nFull - 1)
+    val v1 = (window?.last ?: nFull - 1).coerceIn(0, nFull - 1).coerceAtLeast(v0)
     val segNames = data.groups.flatMap { it.segments.map { s -> s.label } }.distinct()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
@@ -1372,10 +1870,12 @@ fun VBarChart(
                 .height(height)
                 .onSizeChanged { canvasSize = it }
                 .then(
-                    if (interactive) Modifier.pointerInput(data, canvasSize) {
+                    if (interactive) Modifier.pointerInput(data, canvasSize, v0, v1) {
                         awaitPointerEventScope {
                             passiveTapListener { pos ->
-                                onBarSelected?.invoke(findBarIndex(data, pos, canvasSize, density) ?: return@passiveTapListener)
+                                onBarSelected?.invoke(
+                                    findBarIndex(data, pos, canvasSize, density, v0, v1) ?: return@passiveTapListener
+                                )
                             }
                         }
                     } else Modifier
@@ -1386,16 +1886,16 @@ fun VBarChart(
             val topPad = 10.dp.toPx()
             val chartW = size.width - labelW - 4.dp.toPx()
             val chartH = size.height - bottomH - topPad
+            val cnt = (v1 - v0).coerceAtLeast(1)
 
             val maxVal = if (data.stacked) {
                 // 堆疊圖：以每根長條的「整柱總和」計算刻度，避免溢出色繪區
-                data.groups.maxOfOrNull { g -> g.segments.sumOf { it.value } } ?: 1.0
+                (v0..v1).maxOfOrNull { g -> data.groups[g].segments.sumOf { it.value } } ?: 1.0
             } else {
-                data.groups.flatMap { it.segments.map { s -> s.value } }.maxOrNull() ?: 1.0
+                (v0..v1).flatMap { data.groups[it].segments.map { s -> s.value } }.maxOrNull() ?: 1.0
             }.coerceAtLeast(1e-9)
             val scaleMax = maxVal * 1.15
-            val n = data.groups.size
-            val groupW = chartW / n.coerceAtLeast(1)
+            val groupW = chartW / cnt.coerceAtLeast(1)
             val barW = (groupW * 0.6f) / if (data.stacked) 1 else segNames.size.coerceAtLeast(1)
 
             // 網格 + Y 標籤
@@ -1406,18 +1906,32 @@ fun VBarChart(
                 drawLine(Color(0xFFE0E0E0), Offset(labelW, y), Offset(labelW + chartW, y), strokeWidth = 1f)
                 drawText(textMeasurer, valueFormatter(v), topLeft = Offset(2.dp.toPx(), y - 7.dp.toPx()), style = labelStyle)
             }
-            // X 標籤：依標籤寬度與可用寬度自動決定間距(空間足夠時顯示全部科別名稱)
-            val maxLabelW = data.groups.maxOfOrNull { g ->
-                textMeasurer.measure(AnnotatedString(g.label), labelStyle).size.width
+            // X 標籤：依標籤寬度與可用寬度自動決定間距(縮放後視窗變窄 → 更多標籤)
+            val pad = 4.dp.toPx()
+            val maxLabelW = (v0..v1).maxOfOrNull { g ->
+                textMeasurer.measure(AnnotatedString(data.groups[g].label), labelStyle).size.width
             } ?: 0
-            val step = max(1, kotlin.math.ceil(maxLabelW / groupW.coerceAtLeast(1f)).toInt())
-            for (i in 0 until n step step) {
-                val x = labelW + groupW * i + groupW / 2
-                drawText(textMeasurer, data.groups[i].label, topLeft = Offset(x - 18.dp.toPx(), size.height - bottomH + 2.dp.toPx()), style = labelStyle)
+            val step = max(1, kotlin.math.ceil((maxLabelW + pad) / groupW.coerceAtLeast(1f)).toInt())
+            var i = v0
+            var lastDrawn = -1
+            while (i <= v1) {
+                val x = labelW + groupW * (i - v0) + groupW / 2
+                drawText(textMeasurer, data.groups[i].label,
+                    topLeft = Offset((x - 18.dp.toPx()).coerceAtLeast(0f), size.height - bottomH + 2.dp.toPx()),
+                    style = labelStyle)
+                lastDrawn = i
+                i += step
+            }
+            if (lastDrawn != v1 && v1 > v0) {
+                val x = labelW + groupW * (v1 - v0) + groupW / 2
+                drawText(textMeasurer, data.groups[v1].label,
+                    topLeft = Offset((x - 18.dp.toPx()).coerceAtLeast(0f), size.height - bottomH + 2.dp.toPx()),
+                    style = labelStyle)
             }
 
-            data.groups.forEachIndexed { gi, g ->
-                val x0 = labelW + groupW * gi
+            for (gi in v0..v1) {
+                val g = data.groups[gi]
+                val x0 = labelW + groupW * (gi - v0)
                 if (data.stacked) {
                     var acc = 0f
                     g.segments.forEachIndexed { si, s ->
@@ -1594,7 +2108,7 @@ private fun IncomeSliceCard(s: DashboardRepo.IncomeSliceStat, index: Int, total:
 
 // ── 資料表(含色階儲存格) ────────────────────────────
 @Composable
-fun DataTable(data: TableData, modifier: Modifier = Modifier) {
+fun DataTable(data: TableData, modifier: Modifier = Modifier, onRowClick: ((Int) -> Unit)? = null) {
     if (data.rows.isEmpty()) { EmptyHint(); return }
     val textMeasurer = rememberTextMeasurer()
     val headerStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -1619,8 +2133,11 @@ fun DataTable(data: TableData, modifier: Modifier = Modifier) {
                 }
             }
         }
-        data.rows.forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        data.rows.forEachIndexed { ri, row ->
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    .then(if (onRowClick != null) Modifier.clickable { onRowClick(ri) } else Modifier)
+            ) {
                 row.forEachIndexed { ci, cell ->
                     Box(
                         Modifier.weight(weights[ci] / weightSum)
