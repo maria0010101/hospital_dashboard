@@ -86,6 +86,10 @@ object Fmt {
     fun moneyK(v: Double): String =
         if (v.isNaN()) "-" else String.format("%,.0f", v / 1000.0)
 
+    /** 計數以「千人」為單位顯示（整數＋千）。 */
+    fun k(v: Double): String =
+        if (v.isNaN()) "-" else String.format("%,.0f千", v / 1000.0)
+
     fun percent(v: Double): String = String.format("%.1f%%", v)
 
     fun int(v: Double): String = String.format("%,.0f", v)

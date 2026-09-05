@@ -1794,15 +1794,34 @@ fun HBarChart(
                             if (barW > 34.dp.toPx())
                                 drawText(textMeasurer, valueFormatter(row.segments[0].value), topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = lblStyle)
                         } else {
-                            // 數值 + 後端補充數據(如平均每診人次)
-                            var cx = endX
-                            if (barW > 34.dp.toPx()) {
-                                val vtxt = valueFormatter(row.segments[0].value)
-                                drawText(textMeasurer, vtxt, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()), style = lblStyle)
-                                cx += textMeasurer.measure(AnnotatedString(vtxt), lblStyle).size.width + 8.dp.toPx()
+                            // 數值置於色塊起始處(白字)，條尾保留給補充數據(平均每診…)
+                            val s0 = row.segments[0]
+                            val vtxt = valueFormatter(s0.value)
+                            val vw = textMeasurer.measure(AnnotatedString(vtxt), valStyle).size.width
+                            val tr = row.trailing
+                            val trw = textMeasurer.measure(AnnotatedString(tr),
+                                TextStyle(fontSize = 9.sp, color = outlineColor)).size.width
+                            val drawnInside = barW > 30.dp.toPx() && vw < barW - 8.dp.toPx()
+                            if (drawnInside) {
+                                drawText(textMeasurer, vtxt,
+                                    topLeft = Offset(nameW + gap + 4.dp.toPx(), y + barH / 2 - 7.dp.toPx()),
+                                    style = valStyle)
+                                if (trw < size.width - endX)
+                                    drawText(textMeasurer, tr, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()),
+                                        style = TextStyle(fontSize = 9.sp, color = outlineColor))
+                            } else if (barW > 20.dp.toPx()) {
+                                // 條過窄：數值與補充數據皆置於條外(依剩餘空間省略)
+                                var cx = endX
+                                val lblW = textMeasurer.measure(AnnotatedString(vtxt), lblStyle).size.width
+                                if (lblW < size.width - cx) {
+                                    drawText(textMeasurer, vtxt, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()),
+                                        style = lblStyle)
+                                    cx += lblW + 8.dp.toPx()
+                                }
+                                if (trw < size.width - cx)
+                                    drawText(textMeasurer, tr, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()),
+                                        style = TextStyle(fontSize = 9.sp, color = outlineColor))
                             }
-                            drawText(textMeasurer, row.trailing, topLeft = Offset(cx, y + barH / 2 - 7.dp.toPx()),
-                                style = TextStyle(fontSize = 9.sp, color = outlineColor))
                         }
                     } else if (barW > 20.dp.toPx()) {
                         // 累計長條尾端標示整列總和(寬度不足時省略，避免超出畫布)

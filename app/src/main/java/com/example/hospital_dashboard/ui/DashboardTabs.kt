@@ -1,6 +1,7 @@
 package com.example.hospital_dashboard.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -37,8 +38,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.hospital_dashboard.DashboardViewModel
 import com.example.hospital_dashboard.data.BarSegment
@@ -166,7 +169,7 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     TabColumn {
         LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
         LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
-        HBarCard(vm, "科別門診人次 (Top 20) ｜ 平均每診人次", deptTop, height = 260.dp,
+        HBarCard(vm, "科別門診人次（TOP20）", deptTop, height = 260.dp, fmt = Fmt::k,
             clickAction = HBarClick.DeptBranch)
         // 初診/複診比例：點擊直接顯示各院區初診人次與初診率(不放大)
         ChartCard("初診/複診比例", onClick = { showFirstSheet = true }) {
@@ -310,24 +313,13 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
             }
         }
 
-        // 最新年月 / 累計 切換（套用於下方框線內 4 張表）
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("📅 顯示範圍", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(6.dp))
-                FilterChip(selected = latestOnly, onClick = { latestOnly = true },
-                    label = { Text("僅顯示最新年月資料") })
-                FilterChip(selected = !latestOnly, onClick = { latestOnly = false },
-                    label = { Text("顯示累計年月資料") })
-            }
-        }
-
         LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 230.dp, fmt = Fmt::percent)
         LineCard(vm, "實際開床數月趨勢（依病床類別）", open, height = 200.dp)
+
+        // 顯示範圍切換（置於開床數趨勢圖下方，套用於框線內 4 張表）
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            RangeToggle(latestOnly, onLatest = { latestOnly = true }, onCumulative = { latestOnly = false })
+        }
 
         // 以下 4 張表套用上方「僅顯示最新年月/顯示累計年月」切換 → 以框線標示
         Column(
@@ -530,18 +522,7 @@ fun BedDetailTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     TabColumn {
         // 顯示範圍切換（預設僅顯示最新年月，床數/人日為該月單月值）
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("📅 顯示範圍", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(6.dp))
-                FilterChip(selected = latestOnly, onClick = { latestOnly = true },
-                    label = { Text("僅顯示最新年月資料") })
-                FilterChip(selected = !latestOnly, onClick = { latestOnly = false },
-                    label = { Text("顯示累計年月資料") })
-            }
+            RangeToggle(latestOnly, onLatest = { latestOnly = true }, onCumulative = { latestOnly = false })
         }
         branches.forEach { (br, rows) ->
             val regBeds = rows.sumOf { it.regBeds }
@@ -638,5 +619,48 @@ fun BedDetailTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
                 }
             }
         }
+    }
+}
+
+/** 「僅顯示最新年月／顯示累計年月」兩行式切換（選取時以主色高對比標示）。 */
+@Composable
+private fun RangeToggle(
+    latestOnly: Boolean,
+    onLatest: () -> Unit,
+    onCumulative: () -> Unit,
+    label: String = "📅 顯示範圍"
+) {
+    @Composable
+    fun chip(selected: Boolean, line1: String, line2: String, onClick: () -> Unit) {
+        val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+        val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(bg)
+                .border(
+                    BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+                    RoundedCornerShape(10.dp)
+                )
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 5.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(line1, style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, color = fg, textAlign = TextAlign.Center)
+                Text(line2, style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, color = fg, textAlign = TextAlign.Center)
+            }
+        }
+    }
+
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        chip(latestOnly, "僅顯示最新", "年月資料") { onLatest() }
+        chip(!latestOnly, "顯示累計", "年月資料") { onCumulative() }
     }
 }
