@@ -166,8 +166,28 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
 
     var showFirstSheet by remember { mutableStateOf(false) }
 
+    // 判斷是否為單月篩選：使用者篩選單一月份，或資料結果僅單一月份
+    val isSingleMonth = filters.months.size == 1 || (opd != null && opd.xLabels.size == 1)
+
     TabColumn {
-        LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
+        if (isSingleMonth) {
+            val singleMonthTitle = if (filters.months.size == 1) {
+                val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
+                "各院區門診人次（$yStr${filters.months.first()}月）"
+            } else {
+                "各院區門診人次"
+            }
+            HBarCard(
+                vm = vm,
+                title = singleMonthTitle,
+                data = brBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
+        }
+
         LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
         HBarCard(vm, "科別門診人次（TOP20）", deptTop, height = 260.dp, fmt = Fmt::k,
             clickAction = HBarClick.DeptBranch)
@@ -176,8 +196,7 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
             pie?.let { PieChart(it) } ?: LoadingBox()
         }
         LineCard(vm, "各部別門診人次趨勢", div, height = 200.dp)
-        HBarCard(vm, "各院區門診人次", brBar, height = 180.dp,
-            clickAction = HBarClick.BranchDept)
+        // 原第 6 張卡片「各院區門診人次」已合併至首張卡片，單月時於首卡顯示，多月時不重複顯示
     }
 
     if (showFirstSheet) {

@@ -57,7 +57,16 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeZoom() { _zoomChart.value = null }
 
-    init { refresh() }
+    init {
+        com.example.hospital_dashboard.report.registry.ReportRegistry.initDefaultReports()
+        refresh()
+    }
+
+    /** 依據 ReportContext 執行已註冊之報表 (統一報表平台架構) */
+    fun executeReport(context: com.example.hospital_dashboard.report.model.ReportContext): com.example.hospital_dashboard.report.model.ReportResult? {
+        val report = com.example.hospital_dashboard.report.registry.ReportRegistry.get(context.reportId) ?: return null
+        return report.execute(context, db)
+    }
 
     fun refresh() {
         if (db.hasImportedData()) {

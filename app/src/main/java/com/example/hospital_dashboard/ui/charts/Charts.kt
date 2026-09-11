@@ -107,8 +107,10 @@ val PALETTE = listOf(
     Color(0xFFC0392B), Color(0xFF2980B9), Color(0xFF27AE60), Color(0xFF8E44AD)
 )
 
-fun seriesColor(name: String, index: Int): Color =
-    BRANCH_COLORS[name] ?: PALETTE[index % PALETTE.size]
+fun seriesColor(name: String, index: Int): Color {
+    val baseName = name.replace("(去年)", "").trim()
+    return BRANCH_COLORS[baseName] ?: BRANCH_COLORS[name] ?: PALETTE[index % PALETTE.size]
+}
 
 // ── 圖表內容(可全螢幕橫向放大檢視) ──────────────────
 /** 橫條圖點擊列的明細模式。 */
@@ -1399,8 +1401,12 @@ private fun Legend(names: List<String>) {
     ) {
         names.forEachIndexed { i, n ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp))
-                    .background(seriesColor(n, i)))
+                val baseColor = seriesColor(n, i)
+                val boxColor = if (n.contains("去年")) baseColor.copy(alpha = 0.45f) else baseColor
+                Box(
+                    Modifier.size(10.dp).clip(RoundedCornerShape(2.dp))
+                        .background(boxColor)
+                )
                 Spacer(Modifier.width(4.dp))
                 Text(n, style = MaterialTheme.typography.labelSmall)
             }
@@ -1515,8 +1521,9 @@ private fun findNearestPoint(
 
     val items = data.series.filter { !it.dashed }.mapNotNull { s ->
         val v = s.values.getOrNull(bestIdx) ?: return@mapNotNull null
-        val priorSeries = data.series.firstOrNull { it.dashed && it.name == "${s.name}(去年)" }
-        val p = if (priorIdx >= 0) priorSeries?.values?.getOrNull(priorIdx) else null
+        val baseName = s.name.replace("(去年)", "").trim()
+        val priorSeries = data.series.firstOrNull { it.dashed && (it.name == "${baseName}(去年)" || it.name == "${baseName} (去年)" || it.name == baseName || it.name == "去年同期") }
+        val p = priorSeries?.values?.getOrNull(bestIdx) ?: if (priorIdx >= 0) priorSeries?.values?.getOrNull(priorIdx) else null
         val delta = if (v != 0.0 && p != null && p != 0.0 && !p.isNaN()) (v - p) / p * 100.0 else null
         // 近三個月(含本期)：直接取自該序列的 x 索引(前兩期 + 本期)
         val recent = (bestIdx - 2..bestIdx).map { s.values.getOrNull(it) }
@@ -1553,7 +1560,8 @@ fun LineChart(
     if (w0 > w1) { EmptyHint(); return }
     val wCnt = (w1 - w0).coerceAtLeast(1)
     Column {
-        Legend(data.series.map { it.name })
+        val legendNames = data.series.filter { !it.dashed && !it.name.contains("(去年)") }.map { it.name }
+        Legend(legendNames)
         Spacer(Modifier.height(4.dp))
         val textMeasurer = rememberTextMeasurer()
         val labelStyle = TextStyle(fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
@@ -1625,7 +1633,10 @@ fun LineChart(
 
             // 序列（僅視窗範圍）
             data.series.forEachIndexed { si, s ->
-                val color = seriesColor(s.name, si)
+                val baseName = s.name.replace("(去年)", "").trim()
+                val baseIndex = data.series.indexOfFirst { !it.dashed && (it.name == baseName || it.name == s.name) }
+                    .let { if (it >= 0) it else si }
+                val color = seriesColor(baseName, baseIndex)
                 val dash = if (s.dashed) PathEffect.dashPathEffect(floatArrayOf(10f, 10f)) else null
                 val path = androidx.compose.ui.graphics.Path()
                 var started = false
@@ -1646,9 +1657,19 @@ fun LineChart(
 // ── 橫條圖 ───────────────────────────────────────────
 
 /** 依點擊位置找橫條圖的列索引。 */
+internal fun hbarNameWidth(data: HBarData, density: Density): Float {
+    val maxNameLen = data.rows.maxOfOrNull { it.name.length } ?: 6
+    val dpVal = when {
+        maxNameLen <= 3 -> 44.dp
+        maxNameLen <= 5 -> 60.dp
+        else -> 88.dp
+    }
+    return with(density) { dpVal.toPx() }
+}
+
 private fun findRowIndex(data: HBarData, tap: Offset, size: IntSize, density: Density): Int? {
     if (size.width <= 0 || size.height <= 0 || data.rows.isEmpty()) return null
-    val nameW = with(density) { 88.dp.toPx() }
+    val nameW = hbarNameWidth(data, density)
     val gap = with(density) { 6.dp.toPx() }
     val barH = (size.height / data.rows.size).toFloat().coerceAtMost(with(density) { 26.dp.toPx() })
     val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
@@ -1693,7 +1714,7 @@ fun HBarChart(
                     } else Modifier
                 )
         ) {
-            val nameW = 88.dp.toPx()
+            val nameW = hbarNameWidth(data, density)
             val gap = 6.dp.toPx()
             val barH = (size.height / data.rows.size).coerceAtMost(26.dp.toPx())
             val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
@@ -1704,7 +1725,8 @@ fun HBarChart(
             val maxTotal = data.rows.maxOfOrNull { r -> r.segments.sumOf { it.value } }?.coerceAtLeast(1e-9) ?: 1.0
             val maxVal = if (data.grouped || data.overlap) maxSeg else maxTotal
             val target = data.targetLine
-            val scaleMax = max(maxVal, target ?: 0.0) * 1.15
+            val rightMultiplier = if (data.overlap || data.rows.any { it.trailing != null }) 1.55 else 1.15
+            val scaleMax = max(maxVal, target ?: 0.0) * rightMultiplier
 
             fun xOf(v: Double) = (v / scaleMax * chartW).toFloat()
 
@@ -1723,7 +1745,13 @@ fun HBarChart(
 
                 val rowTotal = row.segments.sumOf { it.value }
                 val barW = xOf(rowTotal)
-                val colors = row.segments.mapIndexed { si, _ -> seriesColor(row.segments[si].label, si) }
+                val isYoyBranch = (BRANCH_COLORS[row.name] != null) && row.segments.any { it.label.contains("去年") }
+                val branchColor = BRANCH_COLORS[row.name]
+                val colors = if (isYoyBranch && branchColor != null) {
+                    listOf(branchColor, branchColor)
+                } else {
+                    row.segments.mapIndexed { si, _ -> seriesColor(row.segments[si].label, si) }
+                }
                 if (data.grouped) {
                     // 群組：各段並排
                     val segW = barW / row.segments.size
@@ -1735,17 +1763,17 @@ fun HBarChart(
                         if (w > 30.dp.toPx()) drawText(textMeasurer, valueFormatter(s.value), topLeft = Offset(x + 3.dp.toPx(), y + barH / 2 - 7.dp.toPx()), style = valStyle)
                     }
                 } else if (data.overlap && row.segments.size >= 2) {
-                    // 重疊橫條：兩段皆以座標原點起算，第二段(實際)疊於第一段(登記)上方
+                    // 重疊橫條：兩段皆以座標原點起算，第二段疊於第一段上方
                     val s0 = row.segments[0]
                     val s1 = row.segments[1]
                     val w0 = xOf(s0.value)
                     val w1 = xOf(s1.value)
                     val bh = barH - 6.dp.toPx()
                     val x0 = nameW + gap
-                    // 底層：第一段(登記)淡色全高
+                    // 底層：第一段(登記/去年同期)淡色全高
                     drawRect(colors[0].copy(alpha = 0.45f), Offset(x0, y + 3.dp.toPx()),
                         Size(w0.coerceAtLeast(1f), bh))
-                    // 上層：第二段(實際)同起點、置於上緣(高度 62%)，疊加於登記之上
+                    // 上層：第二段(實際/今年門診)同起點、置於上緣(高度 62%)，疊加於第一段之上
                     drawRect(colors[1], Offset(x0, y + 3.dp.toPx()),
                         Size(w1.coerceAtLeast(1f), bh * 0.62f))
                     if (w1 > 44.dp.toPx()) {
@@ -1756,21 +1784,25 @@ fun HBarChart(
                                 topLeft = Offset(x0 + (w1 - tw) / 2, y + 3.dp.toPx() + bh * 0.62f / 2 - 7.dp.toPx()),
                                 style = valStyle)
                     }
-                    // 條尾：登記床數值 + 開床率（超出畫布寬時省略，避免文字重疊裁切）
+                    // 條尾：數值 + 變化率（超出畫布寬時省略，避免文字重疊裁切）
                     val endX = x0 + w0.coerceAtLeast(w1) + 4.dp.toPx()
                     val headStyle = TextStyle(fontSize = 9.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
-                    val vtxt = valueFormatter(s0.value)
+                    val hasDrawnInside = w1 > 44.dp.toPx()
+                    val mainSeg = if (row.segments[0].label.contains("去年") && row.segments.size > 1) row.segments[1] else row.segments[0]
+                    val vtxt = valueFormatter(mainSeg.value)
                     val vw = textMeasurer.measure(AnnotatedString(vtxt), headStyle).size.width
                     if (vw < size.width - endX) {
-                        drawText(textMeasurer, vtxt, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = headStyle)
-                        val tx = endX + vw + 8.dp.toPx()
+                        if (!hasDrawnInside || !isYoyBranch) {
+                            drawText(textMeasurer, vtxt, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = headStyle)
+                        }
+                        val textOffset = if (!hasDrawnInside || !isYoyBranch) endX + vw + 8.dp.toPx() else endX
                         if (row.trailing != null) {
                             val tr = row.trailing
-                            val trw = textMeasurer.measure(AnnotatedString(tr),
-                                TextStyle(fontSize = 9.sp, color = outlineColor)).size.width
-                            if (trw < size.width - tx)
-                                drawText(textMeasurer, tr, topLeft = Offset(tx, y + barH / 2 - 7.dp.toPx()),
-                                    style = TextStyle(fontSize = 9.sp, color = outlineColor))
+                            val trStyle = TextStyle(fontSize = 8.5.sp, color = outlineColor)
+                            val trw = textMeasurer.measure(AnnotatedString(tr), trStyle).size.width
+                            if (trw < size.width - textOffset)
+                                drawText(textMeasurer, tr, topLeft = Offset(textOffset, y + barH / 2 - 7.dp.toPx()),
+                                    style = trStyle)
                         }
                     }
                 } else {

@@ -90,7 +90,8 @@ class DashboardRepo(private val db: HospitalDb) {
         val yoyRows = if (yoySql != null) db.query(yoySql, yoyParams) else emptyList()
         val kept = rows.filter(keepPoint)
         val keptYoy = yoyRows.filter(keepPoint)
-        val xKeys = (kept + keptYoy)
+        // X 軸刻度以本期 (kept) 為準，若無本期則取 keptYoy，避免軸首出現非選定年月的刻度
+        val xKeys = (if (kept.isNotEmpty()) kept else keptYoy)
             .map { ymSort(it[0], it[1]) to ymLabel(it[0], it[1]) }
             .distinct().sortedBy { it.first }
         val xLabels = xKeys.map { it.second }
@@ -98,7 +99,14 @@ class DashboardRepo(private val db: HospitalDb) {
 
         fun mkSeries(name: String, src: List<List<Any?>>, dashed: Boolean): LineSeries {
             val vals = xKeys.map { k ->
-                src.firstOrNull { ymSort(it[0], it[1]) == k.first }?.let { r ->
+                val targetYm = if (dashed) {
+                    val y = k.first / 100
+                    val m = k.first % 100
+                    (y - 1) * 100 + m
+                } else {
+                    k.first
+                }
+                src.firstOrNull { ymSort(it[0], it[1]) == targetYm }?.let { r ->
                     valueIdxs.toList().mapNotNull { i -> num(r[i]) }.firstOrNull()?.times(valueScale)
                 }
             }
@@ -115,8 +123,16 @@ class DashboardRepo(private val db: HospitalDb) {
             if (groupColIdx < 0) {
                 if (keptYoy.isNotEmpty()) series.add(mkSeries("去年同期", keptYoy, true))
             } else {
-                val groups = keptYoy.groupBy { it[groupColIdx]?.toString() ?: "" }
-                for ((g, rs) in groups) series.add(mkSeries("$g(去年)", rs, true))
+                val groupNames = (kept.mapNotNull { it[groupColIdx]?.toString() } +
+                    keptYoy.mapNotNull { it[groupColIdx]?.toString() }).distinct()
+                val yoyGroups = keptYoy.groupBy { it[groupColIdx]?.toString() ?: "" }
+                for (g in groupNames) {
+                    val rs = yoyGroups[g] ?: emptyList()
+                    val s = mkSeries("$g(去年)", rs, true)
+                    if (s.values.any { it != null && it > 0 }) {
+                        series.add(s)
+                    }
+                }
             }
         }
         return LineChartData(xLabels, series)
@@ -325,16 +341,61 @@ class DashboardRepo(private val db: HospitalDb) {
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3))
     }
 
-    /** 各院區門診人次(橫條，由小到大)。 */
+    /** 各院區門診人次(橫條，降冪；含去年同期半透明比對)。 */
     fun branchOpdBar(f: Filters): HBarData {
         val (w, p) = whereFor(f, true, 0)
         val rows = db.query(
             "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
                 "WHERE $w GROUP BY branch_name", p)
-        val items = rows.mapNotNull { r ->
-            num(r[1])?.let { v -> if (v > 0) r[0]?.toString()?.let { it to v } else null }
-        }.sortedByDescending { it.second }
-        return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("門診人次", it.second))) })
+        val currentMap = rows.mapNotNull { r ->
+            val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+            val v = num(r.getOrNull(1)) ?: 0.0
+            b to v
+        }.toMap()
+
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, true, -1)
+            val yrows = db.query(
+                "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
+                    "WHERE $wy GROUP BY branch_name", py)
+            yrows.mapNotNull { r ->
+                val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+                val v = num(r.getOrNull(1)) ?: 0.0
+                b to v
+            }.toMap()
+        } else emptyMap()
+
+        val allBranches = (currentMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allBranches.map { b ->
+            val cur = currentMap[b] ?: 0.0
+            val prev = yoyMap[b] ?: 0.0
+            Triple(b, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }
+            .sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val hbarRows = items.map { (b, cur, prev) ->
+                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
+                val trailing = if (deltaPct != null) {
+                    val sign = if (deltaPct >= 0) "+" else ""
+                    "去年 ${Fmt.compact(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
+                } else if (prev > 0) {
+                    "去年 ${Fmt.compact(prev)}"
+                } else null
+
+                HBarRow(
+                    name = b,
+                    segments = listOf(
+                        BarSegment("去年同期", prev),
+                        BarSegment("門診人次", cur)
+                    ),
+                    trailing = trailing
+                )
+            }
+            return HBarData(hbarRows, overlap = true)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("門診人次", it.second))) })
+        }
     }
 
     // ══════════ TAB2 住院服務 ════════════════════════
