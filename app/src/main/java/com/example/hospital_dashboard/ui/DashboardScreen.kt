@@ -76,7 +76,9 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showFilters = true }) { Text("⚙ 篩選") }
+                    TextButton(onClick = { showFilters = true }) {
+                        Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}")
+                    }
                     TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換") }
                 }
             )
@@ -328,6 +330,7 @@ private fun FilterSheet(
     var deptsAll by remember { mutableStateOf(filters.depts.isEmpty()) }
     var depts by remember { mutableStateOf(filters.depts) }
     var yoy by remember { mutableStateOf(filters.showYoy) }
+    var showHospitalTotal by remember { mutableStateOf(filters.showHospitalTotal) }
 
     val yearOpts = remember { vm.availableYears() }
     val monthOpts = remember { vm.availableMonths() }
@@ -380,16 +383,27 @@ private fun FilterSheet(
             }
 
             SectionLabel("🏢 院區")
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                FilterChip(selected = branchesAll, onClick = {
-                    if (branchesAll) {
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(selected = branchesAll && !showHospitalTotal, onClick = {
+                    if (branchesAll && !showHospitalTotal) {
                         // 取消全選：展開選項(未勾選=全部)，點選即加入
                         branchesAll = false
                         branches = emptyList()
                     } else {
                         branchesAll = true; branches = emptyList()
                     }
+                    showHospitalTotal = false
                 }, label = { Text("全選") })
+                FilterChip(
+                    selected = showHospitalTotal,
+                    onClick = {
+                        showHospitalTotal = !showHospitalTotal
+                    },
+                    label = { Text("顯示全院") }
+                )
             }
             if (!branchesAll) {
                 ChipFlow(branchOpts.map { it to it }, branches.toSet()) { opt ->
@@ -457,6 +471,7 @@ private fun FilterSheet(
                         branchesAll = true; branches = emptyList()
                         divsAll = true; divs = emptyList()
                         deptsAll = true; depts = emptyList()
+                        showHospitalTotal = false
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("重設") }
@@ -469,7 +484,8 @@ private fun FilterSheet(
                             branches = if (branchesAll) emptyList() else branches,
                             deptDivs = if (divsAll) emptyList() else divs,
                             depts = if (deptsAll) emptyList() else depts,
-                            showYoy = yoy
+                            showYoy = yoy,
+                            showHospitalTotal = showHospitalTotal
                         )
                         onDismiss()
                     },

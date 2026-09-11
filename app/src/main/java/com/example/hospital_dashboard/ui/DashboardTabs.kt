@@ -420,23 +420,31 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     }
     val effMajors = if (majors.isEmpty()) allMajors else majors
 
-    // 僅顯示最新年月 / 顯示累計年月（預設僅顯示最新年月）
-    var latestOnly by rememberSaveable { mutableStateOf(true) }
-
+    // 1. 實際佔床率月趨勢（依病床類別）
     val occ = loadChart(listOf(filters, effMajors)) { vm.repo.bedOccMonthly(filters, effMajors) }
-    val open = loadChart(listOf(filters, effMajors)) { vm.repo.bedOpenMonthly(filters, effMajors) }
-    val brOcc = loadChart(listOf(filters, effMajors, latestOnly)) {
-        vm.repo.bedBranchOcc(filters, effMajors, latestOnly)
-    }
-    val regOpen = loadChart(listOf(filters, effMajors, latestOnly)) {
-        vm.repo.bedBranchRegVsOpen(filters, effMajors, latestOnly)
-    }
-    val pivot = loadChart(listOf(filters, effMajors, latestOnly)) {
-        vm.repo.bedPivot(filters, effMajors, latestOnly = latestOnly)
-    }
-    val yoyCmp = loadChart(listOf(filters, effMajors, latestOnly)) {
-        vm.repo.bedYoyCompare(filters, effMajors, latestOnly)
-    }
+    val catOccBar = loadChart(listOf(filters, effMajors)) { vm.repo.bedCategoryOccBar(filters, effMajors) }
+
+    // 2. 實際開床率月趨勢（依病床類別）
+    val openRate = loadChart(listOf(filters, effMajors)) { vm.repo.bedOpenRateMonthly(filters, effMajors) }
+    val catOpenRateBar = loadChart(listOf(filters, effMajors)) { vm.repo.bedCategoryOpenRateBar(filters, effMajors) }
+
+    // 3. 實際床佔床率月趨勢（依院區）
+    val brOcc = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOccMonthly(filters, effMajors) }
+    val brOccBar = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOccBar(filters, effMajors) }
+
+    // 4. 實際開床率月趨勢（依院區）
+    val brOpenRate = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOpenRateMonthly(filters, effMajors) }
+    val brOpenRateBar = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOpenRateBar(filters, effMajors) }
+
+    // 5. 各院區病床類別實際佔床率（％）熱力圖卡片清單（排除其他，最新年月）
+    val heatmaps = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedCategoryHeatmaps(filters, effMajors) }
+
+    // 單月切換判斷
+    val isSingleMonth = filters.months.size == 1 || (occ != null && occ.xLabels.size == 1)
+    val monthSuffix = if (filters.months.size == 1) {
+        val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
+        "（$yStr${filters.months.first()}月）"
+    } else ""
 
     TabColumn {
         // 篩選列：大類別
@@ -455,59 +463,152 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
             }
         }
 
-        LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 230.dp, fmt = Fmt::percent)
-        LineCard(vm, "實際開床數月趨勢（依病床類別）", open, height = 200.dp)
-
-        // 顯示範圍切換（置於開床數趨勢圖下方，套用於框線內 4 張表）
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            RangeToggle(latestOnly, onLatest = { latestOnly = true }, onCumulative = { latestOnly = false })
+        // 1. 實際床佔床率月趨勢（依病床類別）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各病床類別實際佔床率$monthSuffix",
+                data = catOccBar,
+                height = 240.dp,
+                fmt = Fmt::percent
+            )
+        } else {
+            LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 230.dp, fmt = Fmt::percent)
         }
 
-        // 以下 4 張表套用上方「僅顯示最新年月/顯示累計年月」切換 → 以框線標示
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .border(
-                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    RoundedCornerShape(12.dp)
-                )
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                if (latestOnly) "📦 本區套用：僅顯示最新年月資料（依大類別）"
-                else "📦 本區套用：顯示累計年月資料（依大類別）",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
+        // 2. 實際開床率月趨勢（依病床類別）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各病床類別實際開床率$monthSuffix",
+                data = catOpenRateBar,
+                height = 240.dp,
+                fmt = Fmt::int
             )
-            HBarCard(vm, "各院區實際佔床率", brOcc, height = 220.dp, fmt = Fmt::percent,
-                clickAction = HBarClick.BedBranch)
-            HBarCard(vm, "各院區登記 vs 實際開床數（重疊）", regOpen, height = 220.dp, fmt = Fmt::int,
-                clickAction = HBarClick.BedBranch)
-            TableCard(vm, "各院區 × 病床類別 實際佔床率 (%)", pivot)
+        } else {
+            LineCard(vm, "實際開床率月趨勢（依病床類別）", openRate, height = 200.dp, fmt = Fmt::percent)
+        }
 
-            if (filters.showYoy && yoyCmp != null && yoyCmp.isNotEmpty()) {
-                val data = TableData(
-                    columns = listOf("病床類別", "本期佔床率", "去年同期", "變化 (pp)"),
-                    rows = yoyCmp.map { r ->
-                        listOf(
-                            TableCell(r.category),
-                            TableCell(Fmt.percent(r.curr), vm.repo.occupancyColor(r.curr)),
-                            TableCell(Fmt.percent(r.prev), vm.repo.occupancyColor(r.prev)),
-                            TableCell(
-                                String.format("%+.1f", r.change),
-                                if (r.change >= 0) 0xFFA9DFBF else 0xFFF1948A
-                            )
-                        )
-                    }
-                )
-                TableCard(vm, "📊 去年同期佔床率比較", data)
+        // 3. 實際床佔床率月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區實際佔床率$monthSuffix",
+                data = brOccBar,
+                height = 240.dp,
+                fmt = Fmt::percent,
+                clickAction = HBarClick.BedBranch
+            )
+        } else {
+            LineCard(vm, "實際床佔床率月趨勢（依院區）", brOcc, height = 220.dp, fmt = Fmt::percent)
+        }
+
+        // 4. 實際開床率月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區實際開床率$monthSuffix",
+                data = brOpenRateBar,
+                height = 240.dp,
+                fmt = Fmt::int,
+                clickAction = HBarClick.BedBranch
+            )
+        } else {
+            LineCard(vm, "實際開床率月趨勢（依院區）", brOpenRate, height = 200.dp, fmt = Fmt::percent)
+        }
+
+        // 5. 各院區病床類別實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
+        if (heatmaps != null && heatmaps.isNotEmpty()) {
+            heatmaps.forEach { hm ->
+                BedCategoryHeatCard(vm, hm)
             }
         }
     }
 }
 
+/** 院區病床類別實際佔床率熱力圖卡片 */
+@Composable
+fun BedCategoryHeatCard(
+    vm: DashboardViewModel,
+    heatmap: DashboardRepo.BranchBedCategoryHeatmap
+) {
+    val branch = heatmap.branchName
+    val campusTitle = if (branch.endsWith("院區") || branch == "全院") "${branch}病床類別實際佔床率（％）" else "${branch}院區病床類別實際佔床率（％）"
+    val ymStr = heatmap.latestYm?.let { "最新年月：${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: ""
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    campusTitle,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (ymStr.isNotEmpty()) {
+                    Text(
+                        ymStr,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            if (heatmap.categories.isEmpty()) {
+                EmptyHint("📭 無病床類別資料")
+            } else {
+                val rows = heatmap.categories.chunked(2)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    rows.forEach { rowPairs ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            rowPairs.forEach { (cat, rate) ->
+                                val bgArgb = vm.repo.occupancyColor(rate)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(bgArgb))
+                                        .padding(horizontal = 8.dp, vertical = 7.dp)
+                                ) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            cat,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.Black,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            String.format("%.1f%%", rate),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Black
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowPairs.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun WideTable(data: TableData) {
@@ -519,59 +620,156 @@ private fun WideTable(data: TableData) {
 // ══════════ TAB4 其他服務 ═════════════════════════
 @Composable
 fun OtherTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
-    val offsite = loadChart(listOf(filters)) { vm.repo.offsiteMonthly(filters) }
-    val clinicBar = loadChart(listOf(filters)) { vm.repo.offsiteClinicBar(filters) }
-    val acc = loadChart(listOf(filters)) { vm.repo.accMonthly(filters) }
-    val ops = loadChart(listOf(filters)) { vm.repo.opsMonthly(filters) }
-    val income = loadChart(listOf(filters)) { vm.repo.incomeMonthly(filters) }
-    val brInc = loadChart(listOf(filters)) { vm.repo.branchIncome(filters) }
-    val selfInc = loadChart(listOf(filters)) { vm.repo.branchSelfPay(filters) }
+    // 1. 院外門診部服務量趨勢（依院區）
+    val offsite = loadChart(listOf(filters)) { vm.repo.offsiteBranchMonthly(filters) }
+    val brOffsiteBar = loadChart(listOf(filters)) { vm.repo.offsiteBranchBar(filters) }
+
+    // 2. 洗腎人次（依院區）
+    val dialysis = loadChart(listOf(filters)) { vm.repo.dialysisBranchMonthly(filters) }
+    val brDialysisBar = loadChart(listOf(filters)) { vm.repo.dialysisBranchBar(filters) }
+
+    // 3. 健檢人次（依院區）
+    val checkup = loadChart(listOf(filters)) { vm.repo.checkupBranchMonthly(filters) }
+    val brCheckupBar = loadChart(listOf(filters)) { vm.repo.checkupBranchBar(filters) }
+
+    // 4. 手術人次（依院區）
+    val surgery = loadChart(listOf(filters)) { vm.repo.surgeryBranchMonthly(filters) }
+    val brSurgeryBar = loadChart(listOf(filters)) { vm.repo.surgeryBranchBar(filters) }
+
+    // 5. 生產人次（依院區）
+    val delivery = loadChart(listOf(filters)) { vm.repo.deliveryBranchMonthly(filters) }
+    val brDeliveryBar = loadChart(listOf(filters)) { vm.repo.deliveryBranchBar(filters) }
+
+    // 6. 總收入趨勢（依院區）
+    val incTotal = loadChart(listOf(filters)) { vm.repo.incomeTotalBranchMonthly(filters) }
+    val brIncTotalBar = loadChart(listOf(filters)) { vm.repo.incomeTotalBranchBar(filters) }
+
+    // 7. 自費收入趨勢（依院區）
+    val incSelf = loadChart(listOf(filters)) { vm.repo.incomeSelfBranchMonthly(filters) }
+    val brIncSelfBar = loadChart(listOf(filters)) { vm.repo.incomeSelfBranchBar(filters) }
+
+    // 8. 各院區總收入（累計，單位千元；重疊橫條含去年同期半透明比對）
+    val brIncYoy = loadChart(listOf(filters)) { vm.repo.branchTotalIncomeYoyBar(filters) }
+
+    // 9. 各院區自費收入（累計，單位千元；重疊橫條含去年同期半透明比對）
+    val brSelfIncYoy = loadChart(listOf(filters)) { vm.repo.branchSelfPayIncomeYoyBar(filters) }
+
+    // 單月切換判斷
+    val isSingleMonth = filters.months.size == 1 || (offsite != null && offsite.xLabels.size == 1)
+    val monthSuffix = if (filters.months.size == 1) {
+        val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
+        "（$yStr${filters.months.first()}月）"
+    } else ""
 
     TabColumn {
-        LineCard(vm, "院外門診部服務量趨勢", offsite, height = 210.dp)
-        HBarCard(vm, "各院外門診部服務量（累計）", clinicBar, height = 260.dp)
-        // 洗腎/健檢：點月份 → 各院區明細(近三個月 + 去年同期)
-        LineCard(vm, "洗腎／健檢人次趨勢", acc, height = 210.dp,
-            monthDef = BranchMetricDef(
-                "洗腎／健檢各院區明細", "accounting_report",
-                listOf(
-                    "洗腎人次" to "SUM(CAST(dialysis_count AS REAL))",
-                    "健檢人次" to "SUM(CAST(opd_checkup_count AS REAL))"
-                )
-            ))
-        // 手術/生產：點月份長條 → 各院區明細
-        VBarCard(vm, "手術／生產人次趨勢", ops, height = 230.dp,
-            click = VBarClick.OpsMonth,
-            monthDef = BranchMetricDef(
-                "手術／生產各院區明細", "ops_management_indicators",
-                listOf(
-                    "手術人次" to "SUM(CAST(surgery_opd_count AS REAL)) + SUM(CAST(surgery_admission_count AS REAL))",
-                    "生產人次" to "SUM(CAST(delivery_count AS REAL))"
-                )
-            ))
-        // 收入趨勢(總/自費)：改為相同折線呈現，點月份 → 各院區收入明細
-        val incTotalDef = BranchMetricDef(
-            "總收入各院區明細", "ops_management_indicators",
-            listOf(
-                "門診收入" to "SUM(CAST(total_income_opd AS REAL))",
-                "住院收入" to "SUM(CAST(total_income_admission AS REAL))"
-            ), fmt = Fmt::money
+        // 1. 院外門診部服務量趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區院外門診部服務量$monthSuffix",
+                data = brOffsiteBar,
+                height = 240.dp,
+                clickAction = HBarClick.OffsiteBranch
+            )
+        } else {
+            LineCard(vm, "院外門診部服務量趨勢（依院區）", offsite, height = 210.dp, clickAction = HBarClick.OffsiteBranch)
+        }
+
+        // 2. 洗腎人次（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區洗腎人次$monthSuffix",
+                data = brDialysisBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "洗腎人次月趨勢（依院區）", dialysis, height = 210.dp)
+        }
+
+        // 3. 健檢人次（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區健檢人次$monthSuffix",
+                data = brCheckupBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "健檢人次月趨勢（依院區）", checkup, height = 210.dp)
+        }
+
+        // 4. 手術人次（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區手術人次$monthSuffix",
+                data = brSurgeryBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "手術人次月趨勢（依院區）", surgery, height = 210.dp)
+        }
+
+        // 5. 生產人次（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區生產人次$monthSuffix",
+                data = brDeliveryBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "生產人次月趨勢（依院區）", delivery, height = 210.dp)
+        }
+
+        // 6. 總收入趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區總收入$monthSuffix",
+                data = brIncTotalBar,
+                height = 240.dp,
+                fmt = Fmt::money
+            )
+        } else {
+            LineCard(vm, "總收入趨勢（依院區）", incTotal, height = 230.dp, fmt = Fmt::money)
+        }
+
+        // 7. 自費收入趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區自費收入$monthSuffix",
+                data = brIncSelfBar,
+                height = 240.dp,
+                fmt = Fmt::money
+            )
+        } else {
+            LineCard(vm, "自費收入趨勢（依院區）", incSelf, height = 200.dp, fmt = Fmt::money)
+        }
+
+        // 8. 各院區總收入（累計，單位千元；重疊橫條含去年同期半透明比對）
+        HBarCard(
+            vm = vm,
+            title = "各院區總收入（累計，單位千元）",
+            data = brIncYoy,
+            height = 240.dp,
+            fmt = Fmt::moneyK
         )
-        val incSelfDef = BranchMetricDef(
-            "自費收入各院區明細", "ops_management_indicators",
-            listOf(
-                "門診自費" to "SUM(CAST(self_pay_income_opd AS REAL))",
-                "住院自費" to "SUM(CAST(self_pay_income_admission AS REAL))"
-            ), fmt = Fmt::money
+
+        // 9. 各院區自費收入（累計，單位千元；重疊橫條含去年同期半透明比對）
+        HBarCard(
+            vm = vm,
+            title = "各院區自費收入（累計，單位千元）",
+            data = brSelfIncYoy,
+            height = 240.dp,
+            fmt = Fmt::moneyK
         )
-        LineCard(vm, "收入趨勢（總收入）", income?.first, height = 230.dp, fmt = Fmt::money,
-            monthDef = incTotalDef)
-        LineCard(vm, "收入趨勢（自費收入）", income?.second, height = 200.dp, fmt = Fmt::money,
-            monthDef = incSelfDef)
-        HBarCard(vm, "各院區總收入（累計，單位千元）", brInc, height = 240.dp, fmt = Fmt::moneyK,
-            clickAction = HBarClick.BranchIncome, branchMetricDef = incTotalDef)
-        HBarCard(vm, "各院區自費收入（累計，單位千元）", selfInc, height = 240.dp, fmt = Fmt::moneyK,
-            clickAction = HBarClick.BranchIncome, branchMetricDef = incSelfDef)
     }
 }
 

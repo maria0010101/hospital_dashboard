@@ -97,7 +97,7 @@ val BRANCH_COLORS = mapOf(
     "仁愛" to Color(0xFFE74C3C), "中興" to Color(0xFF3498DB), "和平" to Color(0xFF2ECC71),
     "婦幼" to Color(0xFF9B59B6), "忠孝" to Color(0xFFF39C12), "陽明" to Color(0xFF1ABC9C),
     "松德" to Color(0xFFE67E22), "林森" to Color(0xFF95A5A6), "中醫" to Color(0xFFD35400),
-    "昆明" to Color(0xFF7F8C8D), "院本部" to Color(0xFF34495E)
+    "昆明" to Color(0xFF7F8C8D), "院本部" to Color(0xFF34495E), "全院" to Color(0xFF1565C0)
 )
 
 val PALETTE = listOf(
@@ -114,7 +114,7 @@ fun seriesColor(name: String, index: Int): Color {
 
 // ── 圖表內容(可全螢幕橫向放大檢視) ──────────────────
 /** 橫條圖點擊列的明細模式。 */
-enum class HBarClick { None, DeptBranch, BranchDept, BedBranch, BranchIncome, DivDept, IpdDivDept }
+enum class HBarClick { None, DeptBranch, BranchDept, BedBranch, BranchIncome, DivDept, IpdDivDept, OffsiteBranch }
 
 /** 直條圖點擊長條的明細模式。 */
 enum class VBarClick { None, DeptBranch, PhysDept, BranchIncome, OpsMonth }
@@ -263,7 +263,7 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                     var metricYm by remember(content) { mutableStateOf<Int?>(null) }
                     var selectedDiv by remember(content) { mutableStateOf<String?>(null) }
                     Column {
-                        if (content.clickAction in listOf(HBarClick.DivDept, HBarClick.IpdDivDept)) {
+                        if (content.clickAction in listOf(HBarClick.DivDept, HBarClick.IpdDivDept, HBarClick.OffsiteBranch)) {
                             val divNames = content.data.series.filter { !it.dashed && !it.name.contains("(去年)") }.map { it.name }
                             if (divNames.isNotEmpty()) {
                                 Row(
@@ -271,7 +271,8 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("點選部別看科別明細：", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                    val promptText = if (content.clickAction == HBarClick.OffsiteBranch) "點選院區看門診部明細：" else "點選部別看科別明細："
+                                    Text(promptText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                     divNames.forEach { d ->
                                         Box(
                                             modifier = Modifier
@@ -314,6 +315,12 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                             )
                         } else if (content.clickAction == HBarClick.IpdDivDept) {
                             IpdDivDeptCard(
+                                vm, selectedDiv!!,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedDiv = null }
+                            )
+                        } else if (content.clickAction == HBarClick.OffsiteBranch) {
+                            OffsiteBranchCard(
                                 vm, selectedDiv!!,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 onDismiss = { selectedDiv = null }
@@ -382,6 +389,13 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                         HBarClick.IpdDivDept -> selectedRow?.let { div ->
                             IpdDivDeptCard(
                                 vm, div,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedRow = null }
+                            )
+                        }
+                        HBarClick.OffsiteBranch -> selectedRow?.let { branch ->
+                            OffsiteBranchCard(
+                                vm, branch,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 onDismiss = { selectedRow = null }
                             )
@@ -1002,6 +1016,80 @@ private fun IpdDivDeptCard(
     }
 }
 
+/** 院外門診部各明細卡片(點擊院外門診部服務量院區列或放大細項顯示)。 */
+@Composable
+private fun OffsiteBranchCard(
+    vm: DashboardViewModel,
+    branch: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val stats by produceState<List<DashboardRepo.OffsiteClinicStat>>(emptyList(), branch) {
+        value = withContext(Dispatchers.IO) { vm.repo.offsiteBranchClinics(vm.filters.value, branch) }
+    }
+    val periodNote = periodNoteOf(vm)
+
+    Card(
+        modifier
+            .fillMaxWidth(0.94f)
+            .padding(10.dp)
+            .clickable(onClick = onDismiss),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(
+            Modifier
+                .heightIn(max = 340.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "🏥 $branch 各院外門診部明細",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("✕", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+            }
+            if (periodNote.isNotEmpty()) {
+                Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            Spacer(Modifier.height(4.dp))
+            if (stats.isEmpty()) {
+                Text("📭 無院外門診部資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            } else {
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.clinicName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("合計 ${Fmt.int(s.total)}", style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.width(8.dp))
+                            Text("醫療 ${Fmt.int(s.medical)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.width(6.dp))
+                            Text("保健 ${Fmt.int(s.health)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (s.totalPrior != null && s.totalPrior > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                val d = s.deltaPct ?: 0.0
+                                val sign = if (d >= 0) "+" else ""
+                                val up = d >= 0
+                                Text("去年同期 ${Fmt.compact(s.totalPrior)} ($sign${String.format("%.1f%%", d)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                            }
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** 病床明細卡：某院區實際佔床率近三月趨勢 + 去年同期（點病床橫條後顯示）。 */
 @Composable
 private fun BedBranchCard(
@@ -1606,7 +1694,7 @@ private fun Legend(names: List<String>) {
         names.forEachIndexed { i, n ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val baseColor = seriesColor(n, i)
-                val boxColor = if (n.contains("去年")) baseColor.copy(alpha = 0.45f) else baseColor
+                val boxColor = if (n.contains("去年") || n.contains("登記")) baseColor.copy(alpha = 0.45f) else baseColor
                 Box(
                     Modifier.size(10.dp).clip(RoundedCornerShape(2.dp))
                         .background(boxColor)
@@ -1950,8 +2038,9 @@ fun HBarChart(
                 val rowTotal = row.segments.sumOf { it.value }
                 val barW = xOf(rowTotal)
                 val isYoyRow = row.segments.any { it.label.contains("去年") }
+                val isOverlapSameBase = data.overlap && (isYoyRow || row.segments.any { it.label.contains("登記") })
                 val mainColor = BRANCH_COLORS[row.name] ?: seriesColor(row.name, ri)
-                val colors = if (isYoyRow) {
+                val colors = if (isOverlapSameBase) {
                     listOf(mainColor, mainColor)
                 } else {
                     row.segments.mapIndexed { si, _ -> seriesColor(row.segments[si].label, si) }
@@ -1992,14 +2081,15 @@ fun HBarChart(
                     val endX = x0 + w0.coerceAtLeast(w1) + 4.dp.toPx()
                     val headStyle = TextStyle(fontSize = 9.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
                     val hasDrawnInside = w1 > 44.dp.toPx()
-                    val mainSeg = if (row.segments[0].label.contains("去年") && row.segments.size > 1) row.segments[1] else row.segments[0]
+                    val isDualOverlap = row.segments.size > 1 && (row.segments[0].label.contains("去年") || row.segments[0].label.contains("登記"))
+                    val mainSeg = if (isDualOverlap) row.segments[1] else row.segments[0]
                     val vtxt = valueFormatter(mainSeg.value)
                     val vw = textMeasurer.measure(AnnotatedString(vtxt), headStyle).size.width
                     if (vw < size.width - endX) {
-                        if (!hasDrawnInside || !isYoyRow) {
+                        if (!hasDrawnInside || !isDualOverlap) {
                             drawText(textMeasurer, vtxt, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = headStyle)
                         }
-                        val textOffset = if (!hasDrawnInside || !isYoyRow) endX + vw + 8.dp.toPx() else endX
+                        val textOffset = if (!hasDrawnInside || !isDualOverlap) endX + vw + 8.dp.toPx() else endX
                         if (row.trailing != null) {
                             val tr = row.trailing
                             val trStyle = TextStyle(fontSize = 8.5.sp, color = outlineColor)

@@ -12,9 +12,11 @@ class DashboardRepo(private val db: HospitalDb) {
         val branches: List<String> = emptyList(),  // 空 = 全選
         val deptDivs: List<String> = emptyList(),  // 空 = 全選(僅套用門診/住院)
         val depts: List<String> = emptyList(),     // 空 = 全選
-        val showYoy: Boolean = true
+        val showYoy: Boolean = true,
+        val showHospitalTotal: Boolean = false
     ) {
         fun withYoy(on: Boolean) = copy(showYoy = on)
+        fun withHospitalTotal(on: Boolean) = copy(showHospitalTotal = on)
     }
 
     /** 與 Python make_where 相同：year/month/branch(/dept_div/dept)。yearOffset 用於去年同期。 */
@@ -280,11 +282,13 @@ class DashboardRepo(private val db: HospitalDb) {
     fun opdMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
         val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
-        val sql = """SELECT year, month, branch_name,
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
-        val yoy = if (f.showYoy) """SELECT year, month, branch_name, SUM(CAST(opd_visit_count AS REAL))
-            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+            FROM outpatient_service WHERE $w GROUP BY $groupCols"""
+        val yoy = if (f.showYoy) """SELECT year, month, $branchCol, SUM(CAST(opd_visit_count AS REAL))
+            FROM outpatient_service WHERE $wy GROUP BY $groupCols""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
             yoySql = yoy, yoyParams = if (f.showYoy) py else emptyArray())
     }
@@ -293,12 +297,14 @@ class DashboardRepo(private val db: HospitalDb) {
     fun erMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
         val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
-        val sql = """SELECT year, month, branch_name,
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
-        val yoySql = if (f.showYoy) """SELECT year, month, branch_name,
+            FROM outpatient_service WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) """SELECT year, month, $branchCol,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
-            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+            FROM outpatient_service WHERE $wy GROUP BY $groupCols""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(5),
             keepPoint = { num(it[5])?.let { v -> v > 0 } ?: false },
             yoySql = yoySql, yoyParams = py)
@@ -328,10 +334,12 @@ class DashboardRepo(private val db: HospitalDb) {
     fun firstVisitMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
         val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
-        val sql = """SELECT year, month, branch_name, SUM(CAST(first_visit_count AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
-        val yoySql = if (f.showYoy) """SELECT year, month, branch_name, SUM(CAST(first_visit_count AS REAL))
-            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol, SUM(CAST(first_visit_count AS REAL))
+            FROM outpatient_service WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) """SELECT year, month, $branchCol, SUM(CAST(first_visit_count AS REAL))
+            FROM outpatient_service WHERE $wy GROUP BY $groupCols""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
             yoySql = yoySql, yoyParams = py)
     }
@@ -420,10 +428,14 @@ class DashboardRepo(private val db: HospitalDb) {
         unit: String = "",
         customFormatter: ((Double) -> String)? = null
     ): HBarData {
+        val isBranchTotal = f.showHospitalTotal && dimCol == "branch_name"
+        val selDim = if (isBranchTotal) "'全院' AS branch_name" else dimCol
+        val grpDim = if (isBranchTotal) "" else "GROUP BY $dimCol"
         val (w, p) = whereFor(f, true, 0)
+        val whereClause = if (!isBranchTotal) "$w AND $dimCol IS NOT NULL AND $dimCol != ''" else w
         val rows = db.query(
-            "SELECT $dimCol, SUM(CAST($valCol AS REAL)) FROM $table " +
-                "WHERE $w AND $dimCol IS NOT NULL AND $dimCol != '' GROUP BY $dimCol", p)
+            "SELECT $selDim, SUM(CAST($valCol AS REAL)) FROM $table " +
+                "WHERE $whereClause $grpDim", p)
         val currentMap = rows.mapNotNull { r ->
             val d = r.getOrNull(0)?.toString() ?: return@mapNotNull null
             val v = num(r.getOrNull(1)) ?: 0.0
@@ -432,9 +444,10 @@ class DashboardRepo(private val db: HospitalDb) {
 
         val yoyMap = if (f.showYoy) {
             val (wy, py) = whereFor(f, true, -1)
+            val whereY = if (!isBranchTotal) "$wy AND $dimCol IS NOT NULL AND $dimCol != ''" else wy
             val yrows = db.query(
-                "SELECT $dimCol, SUM(CAST($valCol AS REAL)) FROM $table " +
-                    "WHERE $wy AND $dimCol IS NOT NULL AND $dimCol != '' GROUP BY $dimCol", py)
+                "SELECT $selDim, SUM(CAST($valCol AS REAL)) FROM $table " +
+                    "WHERE $whereY $grpDim", py)
             yrows.mapNotNull { r ->
                 val d = r.getOrNull(0)?.toString() ?: return@mapNotNull null
                 val v = num(r.getOrNull(1)) ?: 0.0
@@ -487,10 +500,12 @@ class DashboardRepo(private val db: HospitalDb) {
     // ══════════ TAB2 住院服務 ════════════════════════
     private fun ipdSql(f: Filters, offset: Int): Pair<String, Array<Any?>> {
         val (w, p) = whereFor(f, true, offset)
-        return """SELECT year, month, branch_name,
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        return """SELECT year, month, $branchCol,
             SUM(CAST(admission_count AS REAL)), SUM(CAST(discharge_count AS REAL)),
             SUM(CAST(admission_days AS REAL)), SUM(CAST(discharge_days AS REAL))
-            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name""" to p
+            FROM inpatient_service WHERE $w GROUP BY $groupCols""" to p
     }
 
     /** 住院人次月趨勢(依院區)，含去年同期虛線。 */
@@ -605,22 +620,28 @@ class DashboardRepo(private val db: HospitalDb) {
     fun alosMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
         val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
-        val sql = """SELECT year, month, branch_name,
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol,
             ROUND(SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(admission_count AS REAL)), 0), 1)
-            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name"""
-        val yoySql = if (f.showYoy) """SELECT year, month, branch_name,
+            FROM inpatient_service WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) """SELECT year, month, $branchCol,
             ROUND(SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(admission_count AS REAL)), 0), 1)
-            FROM inpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+            FROM inpatient_service WHERE $wy GROUP BY $groupCols""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
             yoySql = yoySql, yoyParams = py)
     }
 
     /** 各院區平均住院日(橫條，含去年同期半透明比對)。 */
     fun branchAlosBar(f: Filters): HBarData {
+        val isBranchTotal = f.showHospitalTotal
+        val selBranch = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
+        val grpBranch = if (isBranchTotal) "" else "GROUP BY branch_name"
         val (w, p) = whereFor(f, true, 0)
+        val whereClause = if (!isBranchTotal) "$w AND branch_name IS NOT NULL AND branch_name != ''" else w
         val rows = db.query(
-            "SELECT branch_name, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
-                "FROM inpatient_service WHERE $w GROUP BY branch_name", p)
+            "SELECT $selBranch, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
+                "FROM inpatient_service WHERE $whereClause $grpBranch", p)
         val currentMap = rows.mapNotNull { r ->
             val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
             val days = num(r.getOrNull(1)) ?: 0.0
@@ -630,9 +651,10 @@ class DashboardRepo(private val db: HospitalDb) {
 
         val yoyMap = if (f.showYoy) {
             val (wy, py) = whereFor(f, true, -1)
+            val whereY = if (!isBranchTotal) "$wy AND branch_name IS NOT NULL AND branch_name != ''" else wy
             val yrows = db.query(
-                "SELECT branch_name, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
-                    "FROM inpatient_service WHERE $wy GROUP BY branch_name", py)
+                "SELECT $selBranch, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
+                    "FROM inpatient_service WHERE $whereY $grpBranch", py)
             yrows.mapNotNull { r ->
                 val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
                 val days = num(r.getOrNull(1)) ?: 0.0
@@ -907,6 +929,315 @@ class DashboardRepo(private val db: HospitalDb) {
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(4))
     }
 
+    /** 各病床類別實際佔床率(橫條，降冪；含去年同期半透明比對)。 */
+    fun bedCategoryOccBar(f: Filters, cats: List<String>): HBarData {
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val curRows = db.query(
+            "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "WHERE $where AND category IS NOT NULL AND category != '' GROUP BY category",
+            arrayOf(*p, *cp)
+        )
+        val curMap = curRows.associate {
+            (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) * 100.0)
+        }
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, false, -1)
+            val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
+            val yRows = db.query(
+                "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                    "WHERE $whereY AND category IS NOT NULL AND category != '' GROUP BY category",
+                arrayOf(*py, *cp)
+            )
+            yRows.associate {
+                (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) * 100.0)
+            }
+        } else emptyMap()
+
+        val allCats = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allCats.map { c ->
+            val cur = curMap[c] ?: 0.0
+            val prev = yoyMap[c] ?: 0.0
+            Triple(c, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val hbarRows = items.map { (c, cur, prev) ->
+                val delta = cur - prev
+                val sign = if (delta >= 0) "+" else ""
+                val trailing = if (prev > 0) "去年 ${String.format("%.1f%%", prev)} ($sign${String.format("%.1f%%", delta)})" else null
+                HBarRow(
+                    name = c,
+                    segments = listOf(BarSegment("去年同期", prev), BarSegment("實際佔床率", cur)),
+                    trailing = trailing
+                )
+            }
+            return HBarData(hbarRows, overlap = true, targetLine = 85.0)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("實際佔床率", it.second))) }, targetLine = 85.0)
+        }
+    }
+
+    /** 實際開床率月趨勢(依病床類別，%)，含去年同期虛線。計算方式：實際床數 / 登記床數。 */
+    fun bedOpenRateMonthly(f: Filters, cats: List<String>): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val sql = """SELECT year, month, category,
+            ROUND(SUM(CAST(actual_open_beds AS REAL)) * 100.0 / NULLIF(SUM(CAST(registered_beds AS REAL)), 0), 1)
+            FROM bed_type_service WHERE $where GROUP BY year, month, category"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
+            """SELECT year, month, category,
+                ROUND(SUM(CAST(actual_open_beds AS REAL)) * 100.0 / NULLIF(SUM(CAST(registered_beds AS REAL)), 0), 1)
+                FROM bed_type_service WHERE $whereY GROUP BY year, month, category"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            arrayOf(*py, *cp)
+        } else emptyArray()
+        return buildLine(sql, arrayOf(*p, *cp), groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各病床類別實際開床率(單月橫條：半透明當月登記床數，實色實開床數，後方顯示開床率，不必顯示去年同期)。 */
+    fun bedCategoryOpenRateBar(f: Filters, cats: List<String>): HBarData {
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val rows = db.query(
+            "SELECT category, SUM(CAST(registered_beds AS REAL)), SUM(CAST(actual_open_beds AS REAL)) " +
+                "FROM bed_type_service WHERE $where AND category IS NOT NULL AND category != '' GROUP BY category",
+            arrayOf(*p, *cp)
+        )
+        val items = rows.mapNotNull { r ->
+            val cat = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+            val reg = num(r.getOrNull(1)) ?: 0.0
+            val open = num(r.getOrNull(2)) ?: 0.0
+            if (reg > 0) Triple(cat, reg, open) else null
+        }.sortedByDescending { it.second }
+
+        val hbarRows = items.map { (cat, reg, open) ->
+            val rate = if (reg > 0) open / reg * 100.0 else 0.0
+            HBarRow(
+                name = cat,
+                segments = listOf(
+                    BarSegment("登記床數", reg),
+                    BarSegment("實開床數", open)
+                ),
+                trailing = String.format("開床率 %.1f%%", rate)
+            )
+        }
+        return HBarData(hbarRows, overlap = true)
+    }
+
+    /** 實際床佔床率月趨勢(依院區，%)，含去年同期虛線。 */
+    fun branchBedOccMonthly(f: Filters, cats: List<String> = emptyList()): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol,
+            ${avgCast("actual_occupancy_rate")}
+            FROM bed_type_service WHERE $where GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
+            """SELECT year, month, $branchCol,
+                ${avgCast("actual_occupancy_rate")}
+                FROM bed_type_service WHERE $whereY GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            arrayOf(*py, *cp)
+        } else emptyArray()
+        return buildLine(sql, arrayOf(*p, *cp), groupColIdx = 2, valueIdxs = intArrayOf(3), valueScale = 100.0,
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區實際佔床率(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchBedOccBar(f: Filters, cats: List<String> = emptyList()): HBarData {
+        val isBranchTotal = f.showHospitalTotal
+        val selBranch = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
+        val grpBranch = if (isBranchTotal) "" else "GROUP BY branch_name"
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val whereClause = if (!isBranchTotal) "$where AND branch_name IS NOT NULL AND branch_name != ''" else where
+        val curRows = db.query(
+            "SELECT $selBranch, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "WHERE $whereClause $grpBranch",
+            arrayOf(*p, *cp)
+        )
+        val curMap = curRows.associate {
+            (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) * 100.0)
+        }
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, false, -1)
+            val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
+            val whereYClause = if (!isBranchTotal) "$whereY AND branch_name IS NOT NULL AND branch_name != ''" else whereY
+            val yRows = db.query(
+                "SELECT $selBranch, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                    "WHERE $whereYClause $grpBranch",
+                arrayOf(*py, *cp)
+            )
+            yRows.associate {
+                (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) * 100.0)
+            }
+        } else emptyMap()
+
+        val allBranches = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allBranches.map { b ->
+            val cur = curMap[b] ?: 0.0
+            val prev = yoyMap[b] ?: 0.0
+            Triple(b, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val hbarRows = items.map { (b, cur, prev) ->
+                val delta = cur - prev
+                val sign = if (delta >= 0) "+" else ""
+                val trailing = if (prev > 0) "去年 ${String.format("%.1f%%", prev)} ($sign${String.format("%.1f%%", delta)})" else null
+                HBarRow(
+                    name = b,
+                    segments = listOf(BarSegment("去年同期", prev), BarSegment("實際佔床率", cur)),
+                    trailing = trailing
+                )
+            }
+            return HBarData(hbarRows, overlap = true, targetLine = 85.0)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("實際佔床率", it.second))) }, targetLine = 85.0)
+        }
+    }
+
+    /** 實際開床率月趨勢(依院區，%)，含去年同期虛線。計算方式：實際床數 / 登記床數。 */
+    fun branchBedOpenRateMonthly(f: Filters, cats: List<String> = emptyList()): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol,
+            ROUND(SUM(CAST(actual_open_beds AS REAL)) * 100.0 / NULLIF(SUM(CAST(registered_beds AS REAL)), 0), 1)
+            FROM bed_type_service WHERE $where GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
+            """SELECT year, month, $branchCol,
+                ROUND(SUM(CAST(actual_open_beds AS REAL)) * 100.0 / NULLIF(SUM(CAST(registered_beds AS REAL)), 0), 1)
+                FROM bed_type_service WHERE $whereY GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            arrayOf(*py, *cp)
+        } else emptyArray()
+        return buildLine(sql, arrayOf(*p, *cp), groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區實際開床率(單月橫條：半透明當月登記床數，實色實開床數，後方顯示開床率，不必顯示去年同期)。 */
+    fun branchBedOpenRateBar(f: Filters, cats: List<String> = emptyList()): HBarData {
+        val isBranchTotal = f.showHospitalTotal
+        val selBranch = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
+        val grpBranch = if (isBranchTotal) "" else "GROUP BY branch_name"
+        val (w, p) = whereFor(f, false, 0)
+        val (cc, cp) = catCond(cats)
+        val where = if (cc.isEmpty()) w else "$w AND $cc"
+        val whereClause = if (!isBranchTotal) "$where AND branch_name IS NOT NULL AND branch_name != ''" else where
+        val rows = db.query(
+            "SELECT $selBranch, SUM(CAST(registered_beds AS REAL)), SUM(CAST(actual_open_beds AS REAL)) " +
+                "FROM bed_type_service WHERE $whereClause $grpBranch",
+            arrayOf(*p, *cp)
+        )
+        val items = rows.mapNotNull { r ->
+            val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+            val reg = num(r.getOrNull(1)) ?: 0.0
+            val open = num(r.getOrNull(2)) ?: 0.0
+            if (reg > 0) Triple(b, reg, open) else null
+        }.sortedByDescending { it.second }
+
+        val hbarRows = items.map { (b, reg, open) ->
+            val rate = if (reg > 0) open / reg * 100.0 else 0.0
+            HBarRow(
+                name = b,
+                segments = listOf(
+                    BarSegment("登記床數", reg),
+                    BarSegment("實開床數", open)
+                ),
+                trailing = String.format("開床率 %.1f%%", rate)
+            )
+        }
+        return HBarData(hbarRows, overlap = true)
+    }
+
+    data class BranchBedCategoryHeatmap(
+        val branchName: String,
+        val latestYm: Pair<Int, Int>?,
+        val categories: List<Pair<String, Double>> // (category, rate)
+    )
+
+    /** 某某院區病床類別實際佔床率（％）熱力圖資料：排除「其他」，最新年月佔床率。若篩選不含該院區則不包含。 */
+    fun branchBedCategoryHeatmaps(f: Filters, cats: List<String> = emptyList()): List<BranchBedCategoryHeatmap> {
+        val ym = bedLatestYm(f) ?: return emptyList()
+        val (y, m) = ym
+        val (cc, cp) = catCond(cats)
+        val catFilter = if (cc.isNotEmpty()) "AND $cc" else ""
+
+        val result = mutableListOf<BranchBedCategoryHeatmap>()
+
+        if (f.showHospitalTotal) {
+            val totalRows = db.query(
+                "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                    "WHERE year=? AND month=? AND category != '其他' AND category IS NOT NULL AND category != '' $catFilter " +
+                    "GROUP BY category",
+                arrayOf(y.toString(), m.toString(), *cp)
+            )
+            val totalCats = totalRows.mapNotNull { r ->
+                val c = r[0]?.toString() ?: return@mapNotNull null
+                val rate = (num(r[1]) ?: 0.0) * 100.0
+                c to rate
+            }.sortedByDescending { it.second }
+            if (totalCats.isNotEmpty()) {
+                result.add(BranchBedCategoryHeatmap("全院", ym, totalCats))
+            }
+        }
+
+        val branchFilter = if (f.branches.isNotEmpty()) {
+            "AND branch_name IN (${f.branches.joinToString(",") { "?" }})"
+        } else ""
+        val branchParams = if (f.branches.isNotEmpty()) {
+            arrayOf(y.toString(), m.toString(), *cp, *f.branches.toTypedArray())
+        } else {
+            arrayOf(y.toString(), m.toString(), *cp)
+        }
+
+        val rows = db.query(
+            "SELECT branch_name, category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "WHERE year=? AND month=? AND category != '其他' AND category IS NOT NULL AND category != '' $catFilter $branchFilter " +
+                "GROUP BY branch_name, category",
+            branchParams
+        )
+
+        val byBranch = rows.groupBy { it[0]?.toString() ?: "" }
+        val sortedBranches = byBranch.keys.filter { it.isNotEmpty() }.sorted()
+        for (b in sortedBranches) {
+            val bRows = byBranch[b] ?: continue
+            val catList = bRows.mapNotNull { r ->
+                val c = r[1]?.toString() ?: return@mapNotNull null
+                val rate = (num(r[2]) ?: 0.0) * 100.0
+                c to rate
+            }.sortedByDescending { it.second }
+            if (catList.isNotEmpty()) {
+                result.add(BranchBedCategoryHeatmap(b, ym, catList))
+            }
+        }
+
+        return result
+    }
+
     /** 各院區實際佔床率(橫條，目標 85%，由大到小；可僅顯示最新年月)。 */
     fun bedBranchOcc(f: Filters, cats: List<String>, latestOnly: Boolean = false): HBarData {
         val (w, p) = whereFor(f, false, 0)
@@ -1077,6 +1408,324 @@ class DashboardRepo(private val db: HospitalDb) {
     private fun List<Double>.averageOrNull(): Double? = if (isEmpty()) null else sum() / size
 
     // ══════════ TAB4 其他服務 ════════════════════════
+    /** 院外門診部服務量趨勢(依院區)，含去年同期虛線。 */
+    fun offsiteBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol, SUM(CAST(total AS REAL))
+            FROM offsite_clinic_service WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, SUM(CAST(total AS REAL))
+                FROM offsite_clinic_service WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區院外門診部服務量(橫條，降冪；含去年同期半透明比對)。 */
+    fun offsiteBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "offsite_clinic_service", "branch_name", "total", "門診人次")
+
+    data class OffsiteClinicStat(
+        val clinicName: String,
+        val medical: Double,
+        val health: Double,
+        val total: Double,
+        val totalPrior: Double?,
+        val deltaPct: Double?
+    )
+
+    /** 取得指定院區下各院外門診部明細 (醫療/保健/合計，含去年同期比較)。 */
+    fun offsiteBranchClinics(f: Filters, branch: String): List<OffsiteClinicStat> {
+        val (w, p) = whereFor(f, false, 0)
+        if (w.isEmpty()) return emptyList()
+        val (wy, py) = if (f.showYoy) whereFor(f, false, -1) else "" to emptyArray()
+        val isTotal = branch == "全院"
+        val branchCond = if (isTotal) "" else "AND branch_name=?"
+        val curParams = if (isTotal) p else arrayOf(*p, branch)
+        val curRows = db.query(
+            "SELECT clinic_name, SUM(CAST(medical_visit AS REAL)), SUM(CAST(health_visit AS REAL)), SUM(CAST(total AS REAL)) " +
+                "FROM offsite_clinic_service WHERE $w $branchCond GROUP BY clinic_name",
+            curParams
+        )
+        val curMap = curRows.associate {
+            (it[0]?.toString() ?: "") to Triple(num(it[1]) ?: 0.0, num(it[2]) ?: 0.0, num(it[3]) ?: 0.0)
+        }
+        val priorMap = if (f.showYoy && wy.isNotEmpty()) {
+            val priorParams = if (isTotal) py else arrayOf(*py, branch)
+            val pRows = db.query(
+                "SELECT clinic_name, SUM(CAST(total AS REAL)) " +
+                    "FROM offsite_clinic_service WHERE $wy $branchCond GROUP BY clinic_name",
+                priorParams
+            )
+            pRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        val allClinics = (curMap.keys + priorMap.keys).filter { it.isNotEmpty() }.distinct()
+        return allClinics.map { c ->
+            val (med, health, tot) = curMap[c] ?: Triple(0.0, 0.0, 0.0)
+            val prevTot = priorMap[c]
+            val deltaPct = if (prevTot != null && prevTot > 0) (tot - prevTot) / prevTot * 100.0 else null
+            OffsiteClinicStat(c, med, health, tot, prevTot, deltaPct)
+        }.sortedByDescending { it.total }
+    }
+
+    /** 洗腎人次月趨勢(依院區)，含去年同期虛線。 */
+    fun dialysisBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol, SUM(CAST(dialysis_count AS REAL))
+            FROM accounting_report WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, SUM(CAST(dialysis_count AS REAL))
+                FROM accounting_report WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區洗腎人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun dialysisBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "accounting_report", "branch_name", "dialysis_count", "洗腎人次")
+
+    /** 健檢人次月趨勢(依院區)，含去年同期虛線。 */
+    fun checkupBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol, SUM(CAST(opd_checkup_count AS REAL))
+            FROM accounting_report WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, SUM(CAST(opd_checkup_count AS REAL))
+                FROM accounting_report WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區健檢人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun checkupBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "accounting_report", "branch_name", "opd_checkup_count", "健檢人次")
+
+    /** 手術人次月趨勢(依院區，門診手術+住院手術)，含去年同期虛線。 */
+    fun surgeryBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val valExpr = "(SUM(CAST(surgery_opd_count AS REAL)) + SUM(CAST(surgery_admission_count AS REAL)))"
+        val sql = """SELECT year, month, $branchCol, $valExpr
+            FROM ops_management_indicators WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, $valExpr
+                FROM ops_management_indicators WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區手術人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun surgeryBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "ops_management_indicators", "branch_name", "surgery_opd_count + surgery_admission_count", "手術人次")
+
+    /** 生產人次月趨勢(依院區)，含去年同期虛線。 */
+    fun deliveryBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val sql = """SELECT year, month, $branchCol, SUM(CAST(delivery_count AS REAL))
+            FROM ops_management_indicators WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, SUM(CAST(delivery_count AS REAL))
+                FROM ops_management_indicators WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區生產人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun deliveryBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "ops_management_indicators", "branch_name", "delivery_count", "生產人次")
+
+    /** 總收入趨勢(依院區，門診收入+住院收入)，含去年同期虛線。 */
+    fun incomeTotalBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val valExpr = "(SUM(CAST(total_income_opd AS REAL)) + SUM(CAST(total_income_admission AS REAL)))"
+        val sql = """SELECT year, month, $branchCol, $valExpr
+            FROM ops_management_indicators WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, $valExpr
+                FROM ops_management_indicators WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區總收入(單月橫條，降冪；含去年同期半透明比對)。 */
+    fun incomeTotalBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "ops_management_indicators", "branch_name", "total_income_opd + total_income_admission", "總收入", unit = "元", customFormatter = Fmt::money)
+
+    /** 自費收入趨勢(依院區，門診自費+住院自費)，含去年同期虛線。 */
+    fun incomeSelfBranchMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, false, 0)
+        val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
+        val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
+        val valExpr = "(SUM(CAST(self_pay_income_opd AS REAL)) + SUM(CAST(self_pay_income_admission AS REAL)))"
+        val sql = """SELECT year, month, $branchCol, $valExpr
+            FROM ops_management_indicators WHERE $w GROUP BY $groupCols"""
+        val yoySql = if (f.showYoy) {
+            val (wy, _) = whereFor(f, false, -1)
+            """SELECT year, month, $branchCol, $valExpr
+                FROM ops_management_indicators WHERE $wy GROUP BY $groupCols"""
+        } else null
+        val yoyParams = if (f.showYoy) {
+            val (_, py) = whereFor(f, false, -1)
+            py
+        } else emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = yoyParams)
+    }
+
+    /** 各院區自費收入(單月橫條，降冪；含去年同期半透明比對)。 */
+    fun incomeSelfBranchBar(f: Filters): HBarData =
+        buildYoyHBar(f, "ops_management_indicators", "branch_name", "self_pay_income_opd + self_pay_income_admission", "自費收入", unit = "元", customFormatter = Fmt::money)
+
+    /** 各院區總收入(累計，單位千元；重疊橫條含去年同期半透明比對)。 */
+    fun branchTotalIncomeYoyBar(f: Filters): HBarData {
+        val isBranchTotal = f.showHospitalTotal
+        val selDim = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
+        val grpDim = if (isBranchTotal) "" else "GROUP BY branch_name"
+        val (w, p) = whereFor(f, false, 0)
+        val whereClause = if (!isBranchTotal) "$w AND branch_name IS NOT NULL AND branch_name != ''" else w
+        val curRows = db.query(
+            "SELECT $selDim, (SUM(CAST(total_income_opd AS REAL)) + SUM(CAST(total_income_admission AS REAL))) / 1000.0 " +
+                "FROM ops_management_indicators WHERE $whereClause $grpDim", p)
+        val curMap = curRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, false, -1)
+            val whereY = if (!isBranchTotal) "$wy AND branch_name IS NOT NULL AND branch_name != ''" else wy
+            val yRows = db.query(
+                "SELECT $selDim, (SUM(CAST(total_income_opd AS REAL)) + SUM(CAST(total_income_admission AS REAL))) / 1000.0 " +
+                    "FROM ops_management_indicators WHERE $whereY $grpDim", py)
+            yRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        val allBranches = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allBranches.map { b ->
+            val cur = curMap[b] ?: 0.0
+            val prev = yoyMap[b] ?: 0.0
+            Triple(b, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val rows = items.map { (b, cur, prev) ->
+                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
+                val sign = if ((deltaPct ?: 0.0) >= 0) "+" else ""
+                val trailing = if (deltaPct != null) {
+                    "去年 ${Fmt.moneyK(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
+                } else if (prev > 0) {
+                    "去年 ${Fmt.moneyK(prev)}"
+                } else null
+                HBarRow(
+                    name = b,
+                    segments = listOf(
+                        BarSegment("去年同期", prev),
+                        BarSegment("總收入", cur)
+                    ),
+                    trailing = trailing
+                )
+            }
+            return HBarData(rows, overlap = true)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("總收入", it.second))) })
+        }
+    }
+
+    /** 各院區自費收入(累計，單位千元；重疊橫條含去年同期半透明比對)。 */
+    fun branchSelfPayIncomeYoyBar(f: Filters): HBarData {
+        val isBranchTotal = f.showHospitalTotal
+        val selDim = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
+        val grpDim = if (isBranchTotal) "" else "GROUP BY branch_name"
+        val (w, p) = whereFor(f, false, 0)
+        val whereClause = if (!isBranchTotal) "$w AND branch_name IS NOT NULL AND branch_name != ''" else w
+        val curRows = db.query(
+            "SELECT $selDim, (SUM(CAST(self_pay_income_opd AS REAL)) + SUM(CAST(self_pay_income_admission AS REAL))) / 1000.0 " +
+                "FROM ops_management_indicators WHERE $whereClause $grpDim", p)
+        val curMap = curRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, false, -1)
+            val whereY = if (!isBranchTotal) "$wy AND branch_name IS NOT NULL AND branch_name != ''" else wy
+            val yRows = db.query(
+                "SELECT $selDim, (SUM(CAST(self_pay_income_opd AS REAL)) + SUM(CAST(self_pay_income_admission AS REAL))) / 1000.0 " +
+                    "FROM ops_management_indicators WHERE $whereY $grpDim", py)
+            yRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        val allBranches = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allBranches.map { b ->
+            val cur = curMap[b] ?: 0.0
+            val prev = yoyMap[b] ?: 0.0
+            Triple(b, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val rows = items.map { (b, cur, prev) ->
+                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
+                val sign = if ((deltaPct ?: 0.0) >= 0) "+" else ""
+                val trailing = if (deltaPct != null) {
+                    "去年 ${Fmt.moneyK(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
+                } else if (prev > 0) {
+                    "去年 ${Fmt.moneyK(prev)}"
+                } else null
+                HBarRow(
+                    name = b,
+                    segments = listOf(
+                        BarSegment("去年同期", prev),
+                        BarSegment("自費收入", cur)
+                    ),
+                    trailing = trailing
+                )
+            }
+            return HBarData(rows, overlap = true)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("自費收入", it.second))) })
+        }
+    }
     /** 院外門診部服務量趨勢。 */
     fun offsiteMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, false, 0)
@@ -1948,26 +2597,30 @@ class DashboardRepo(private val db: HospitalDb) {
 
     // ══════════ 色階 ════════════════════════════════
     /** 佔床率 0-100 → 紅-黃-綠 色階(RdYlGn)。 */
-    fun occupancyColor(pct: Double): Long {
-        val t = pct.coerceIn(0.0, 100.0) / 100.0
-        // RdYlGn 節點: 0=(215,48,39) 50=(254,240,144) 100=(26,152,80)
-        val r: Double
-        val g: Double
-        val b: Double
-        if (t < 0.5) {
-            val s = t / 0.5
-            r = 215 + (254 - 215) * s
-            g = 48 + (240 - 48) * s
-            b = 39 + (144 - 39) * s
-        } else {
-            val s = (t - 0.5) / 0.5
-            r = 254 + (26 - 254) * s
-            g = 240 + (152 - 240) * s
-            b = 144 + (80 - 144) * s
+    fun occupancyColor(pct: Double): Long = Companion.occupancyColor(pct)
+
+    companion object {
+        fun occupancyColor(pct: Double): Long {
+            val t = pct.coerceIn(0.0, 100.0) / 100.0
+            // RdYlGn 節點: 0=(215,48,39) 50=(254,240,144) 100=(26,152,80)
+            val r: Double
+            val g: Double
+            val b: Double
+            if (t < 0.5) {
+                val s = t / 0.5
+                r = 215 + (254 - 215) * s
+                g = 48 + (240 - 48) * s
+                b = 39 + (144 - 39) * s
+            } else {
+                val s = (t - 0.5) / 0.5
+                r = 254 + (26 - 254) * s
+                g = 240 + (152 - 240) * s
+                b = 144 + (80 - 144) * s
+            }
+            val ri = (r.toLong() and 0xFF)
+            val gi = (g.toLong() and 0xFF)
+            val bi = (b.toLong() and 0xFF)
+            return 0xFF000000L or (ri shl 16) or (gi shl 8) or bi
         }
-        val ri = (r.toLong() and 0xFF)
-        val gi = (g.toLong() and 0xFF)
-        val bi = (b.toLong() and 0xFF)
-        return 0xFF000000L or (ri shl 16) or (gi shl 8) or bi
     }
 }
