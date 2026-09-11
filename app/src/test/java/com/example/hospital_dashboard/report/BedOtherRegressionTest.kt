@@ -120,4 +120,48 @@ class BedOtherRegressionTest {
         }
         assertTrue("HBarClick.OffsiteBranch must be correctly handled", handled)
     }
+
+    @Test
+    fun testBedStationOccDetailData() {
+        val detail = DashboardRepo.BedStationOccDetail(
+            branch = "仁愛",
+            nursingStation = "十一西",
+            occupancyRate = 98.6667,
+            openBeds = 40.0,
+            registeredBeds = 66.0
+        )
+        assertEquals("仁愛", detail.branch)
+        assertEquals("十一西", detail.nursingStation)
+        assertEquals(98.6667, detail.occupancyRate!!, 0.001)
+        assertEquals(40.0, detail.openBeds, 0.001)
+        assertEquals(66.0, detail.registeredBeds, 0.001)
+        assertEquals(60.606, detail.openRate, 0.01)
+
+        // Test null occupancy rate (e.g. ward with 0 open beds)
+        val nullDetail = DashboardRepo.BedStationOccDetail(
+            branch = "仁愛",
+            nursingStation = "七西",
+            occupancyRate = null,
+            openBeds = 0.0,
+            registeredBeds = 0.0
+        )
+        assertEquals(null, nullDetail.occupancyRate)
+        assertEquals(0.0, nullDetail.openRate, 0.001)
+    }
+
+    @Test
+    fun testBedCategoryHeatmapExcludeOtherFilterPredicate() {
+        fun buildOtherFilter(excludeOther: Boolean): String =
+            if (excludeOther) {
+                "AND major_category != '其他' AND category != '其他' AND category NOT LIKE '%產後護理之家%'"
+            } else ""
+
+        val excluded = buildOtherFilter(true)
+        assertTrue(excluded.contains("major_category != '其他'"))
+        assertTrue(excluded.contains("category NOT LIKE '%產後護理之家%'"))
+        assertTrue(excluded.contains("category != '其他'"))
+
+        val allShown = buildOtherFilter(false)
+        assertEquals("", allShown)
+    }
 }

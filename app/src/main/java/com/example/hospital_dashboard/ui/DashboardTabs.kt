@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -436,8 +437,14 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     val brOpenRate = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOpenRateMonthly(filters, effMajors) }
     val brOpenRateBar = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedOpenRateBar(filters, effMajors) }
 
-    // 5. 各院區病床類別實際佔床率（％）熱力圖卡片清單（排除其他，最新年月）
-    val heatmaps = loadChart(listOf(filters, effMajors)) { vm.repo.branchBedCategoryHeatmaps(filters, effMajors) }
+    // 熱力圖篩選（全部顯示 / 排除其他）與下鑽護理站狀態
+    var excludeOther by rememberSaveable { mutableStateOf(true) }
+    var selectedBedCat by remember { mutableStateOf<SelectedBedCat?>(null) }
+
+    // 5. 各院區病床類別實際佔床率（％）熱力圖卡片清單（排除其他/全部顯示，最新年月）
+    val heatmaps = loadChart(listOf(filters, effMajors, excludeOther)) {
+        vm.repo.branchBedCategoryHeatmaps(filters, effMajors, excludeOther)
+    }
 
     // 單月切換判斷
     val isSingleMonth = filters.months.size == 1 || (occ != null && occ.xLabels.size == 1)
@@ -518,19 +525,69 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         }
 
         // 5. 各院區病床類別實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "病床類別熱力圖",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = !excludeOther,
+                        onClick = { excludeOther = false },
+                        label = { Text("全部顯示") }
+                    )
+                    FilterChip(
+                        selected = excludeOther,
+                        onClick = { excludeOther = true },
+                        label = { Text("排除其他") }
+                    )
+                }
+            }
+        }
+
         if (heatmaps != null && heatmaps.isNotEmpty()) {
             heatmaps.forEach { hm ->
-                BedCategoryHeatCard(vm, hm)
+                BedCategoryHeatCard(vm, hm) { cat ->
+                    selectedBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+                }
             }
         }
     }
+
+    selectedBedCat?.let { sel ->
+        BedStationOccSheet(
+            vm = vm,
+            branch = sel.branch,
+            category = sel.category,
+            ym = sel.ym,
+            onDismiss = { selectedBedCat = null }
+        )
+    }
 }
+
+data class SelectedBedCat(
+    val branch: String,
+    val category: String,
+    val ym: Pair<Int, Int>?
+)
 
 /** 院區病床類別實際佔床率熱力圖卡片 */
 @Composable
 fun BedCategoryHeatCard(
     vm: DashboardViewModel,
-    heatmap: DashboardRepo.BranchBedCategoryHeatmap
+    heatmap: DashboardRepo.BranchBedCategoryHeatmap,
+    onCategoryClick: ((String) -> Unit)? = null
 ) {
     val branch = heatmap.branchName
     val campusTitle = if (branch.endsWith("院區") || branch == "全院") "${branch}病床類別實際佔床率（％）" else "${branch}院區病床類別實際佔床率（％）"
@@ -557,6 +614,11 @@ fun BedCategoryHeatCard(
                     )
                 }
             }
+            Text(
+                "💡 點擊病床類別可查看各護理站佔床率明細",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
             Spacer(Modifier.height(8.dp))
 
             if (heatmap.categories.isEmpty()) {
@@ -576,6 +638,7 @@ fun BedCategoryHeatCard(
                                         .weight(1f)
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(Color(bgArgb))
+                                        .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke(cat) }
                                         .padding(horizontal = 8.dp, vertical = 7.dp)
                                 ) {
                                     Row(
@@ -606,6 +669,104 @@ fun BedCategoryHeatCard(
                     }
                 }
             }
+        }
+    }
+}
+
+/** 護理站佔床率明細底層彈窗（依佔床率由大到小排序） */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BedStationOccSheet(
+    vm: DashboardViewModel,
+    branch: String,
+    category: String,
+    ym: Pair<Int, Int>?,
+    onDismiss: () -> Unit
+) {
+    val stations = loadChart(listOf(branch, category, ym)) {
+        vm.repo.bedCategoryStations(branch, category, ym)
+    }
+    val ymStr = ym?.let { "民國${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: ""
+    val titleBranch = if (branch.endsWith("院區") || branch == "全院") branch else "${branch}院區"
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                "🛏️ $titleBranch · $category 護理站佔床率明細",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            if (ymStr.isNotEmpty()) {
+                Text(
+                    "最新年月：$ymStr",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            if (stations == null) {
+                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            } else if (stations.isEmpty()) {
+                EmptyHint("📭 無護理站佔床率資料")
+            } else {
+                stations.forEach { st ->
+                    val bgArgb = st.occupancyRate?.let { vm.repo.occupancyColor(it) } ?: 0xFFE0E0E0L
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                val stationLabel = if (branch == "全院") "${st.branch} · ${st.nursingStation}" else st.nursingStation
+                                Text(
+                                    stationLabel,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    "實開床數 ${st.openBeds.toInt()} / 登記床數 ${st.registeredBeds.toInt()}" +
+                                        if (st.registeredBeds > 0) " (開床率 ${String.format("%.1f%%", st.openRate)})" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(bgArgb))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    st.occupancyRate?.let { String.format("%.1f%%", it) } ?: "-",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(28.dp))
         }
     }
 }

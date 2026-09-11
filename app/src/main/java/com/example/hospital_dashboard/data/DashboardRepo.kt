@@ -1179,19 +1179,37 @@ class DashboardRepo(private val db: HospitalDb) {
         val categories: List<Pair<String, Double>> // (category, rate)
     )
 
-    /** 某某院區病床類別實際佔床率（％）熱力圖資料：排除「其他」，最新年月佔床率。若篩選不含該院區則不包含。 */
-    fun branchBedCategoryHeatmaps(f: Filters, cats: List<String> = emptyList()): List<BranchBedCategoryHeatmap> {
+    data class BedStationOccDetail(
+        val branch: String,
+        val nursingStation: String,
+        val occupancyRate: Double?, // % e.g. 95.2, null if no valid occupancy rate recorded
+        val openBeds: Double,
+        val registeredBeds: Double
+    ) {
+        val openRate: Double
+            get() = if (registeredBeds > 0) (openBeds / registeredBeds * 100.0) else 0.0
+    }
+
+    /** 某某院區病床類別實際佔床率（％）熱力圖資料：最新年月佔床率。若 excludeOther=true，則排除「其他」與「產後護理之家」。若篩選不含該院區則不包含。 */
+    fun branchBedCategoryHeatmaps(
+        f: Filters,
+        cats: List<String> = emptyList(),
+        excludeOther: Boolean = true
+    ): List<BranchBedCategoryHeatmap> {
         val ym = bedLatestYm(f) ?: return emptyList()
         val (y, m) = ym
         val (cc, cp) = catCond(cats)
         val catFilter = if (cc.isNotEmpty()) "AND $cc" else ""
+        val otherFilter = if (excludeOther) {
+            "AND major_category != '其他' AND category != '其他' AND category NOT LIKE '%產後護理之家%'"
+        } else ""
 
         val result = mutableListOf<BranchBedCategoryHeatmap>()
 
         if (f.showHospitalTotal) {
             val totalRows = db.query(
                 "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
-                    "WHERE year=? AND month=? AND category != '其他' AND category IS NOT NULL AND category != '' $catFilter " +
+                    "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' $otherFilter $catFilter " +
                     "GROUP BY category",
                 arrayOf(y.toString(), m.toString(), *cp)
             )
@@ -1216,7 +1234,7 @@ class DashboardRepo(private val db: HospitalDb) {
 
         val rows = db.query(
             "SELECT branch_name, category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
-                "WHERE year=? AND month=? AND category != '其他' AND category IS NOT NULL AND category != '' $catFilter $branchFilter " +
+                "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' $otherFilter $catFilter $branchFilter " +
                 "GROUP BY branch_name, category",
             branchParams
         )
@@ -1236,6 +1254,57 @@ class DashboardRepo(private val db: HospitalDb) {
         }
 
         return result
+    }
+
+    /** 某院區某病床類別之各護理站佔床率明細（依佔床率由大到小排序）。若 branch 為 "全院"，則列出所有院區之該類別護理站。 */
+    fun bedCategoryStations(
+        branch: String,
+        category: String,
+        ym: Pair<Int, Int>? = null
+    ): List<BedStationOccDetail> {
+        val targetYm = ym ?: run {
+            val r = db.query(
+                "SELECT year, month FROM bed_type_service ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1"
+            ).firstOrNull() ?: return emptyList()
+            val y = r[0]?.toString()?.toIntOrNull() ?: return emptyList()
+            val m = r[1]?.toString()?.toIntOrNull() ?: return emptyList()
+            y to m
+        }
+        val (y, m) = targetYm
+
+        val isAll = branch == "全院"
+        val branchCond = if (!isAll) "AND branch_name = ?" else ""
+        val params = if (!isAll) {
+            arrayOf<Any?>(y.toString(), m.toString(), category, branch)
+        } else {
+            arrayOf<Any?>(y.toString(), m.toString(), category)
+        }
+
+        val rows = db.query(
+            "SELECT branch_name, nursing_station, ${avgCast("actual_occupancy_rate")}, " +
+                "SUM(CAST(actual_open_beds AS REAL)), SUM(CAST(registered_beds AS REAL)) " +
+                "FROM bed_type_service " +
+                "WHERE year = ? AND month = ? AND category = ? " +
+                "AND nursing_station IS NOT NULL AND nursing_station != '' $branchCond " +
+                "GROUP BY branch_name, nursing_station " +
+                "ORDER BY ${avgCast("actual_occupancy_rate")} DESC, nursing_station ASC",
+            params
+        )
+
+        return rows.mapNotNull { r ->
+            val b = r[0]?.toString() ?: return@mapNotNull null
+            val st = r[1]?.toString() ?: return@mapNotNull null
+            val occ = num(r[2])?.let { it * 100.0 }
+            val open = num(r[3]) ?: 0.0
+            val reg = num(r[4]) ?: 0.0
+            BedStationOccDetail(
+                branch = b,
+                nursingStation = st,
+                occupancyRate = occ,
+                openBeds = open,
+                registeredBeds = reg
+            )
+        }
     }
 
     /** 各院區實際佔床率(橫條，目標 85%，由大到小；可僅顯示最新年月)。 */
