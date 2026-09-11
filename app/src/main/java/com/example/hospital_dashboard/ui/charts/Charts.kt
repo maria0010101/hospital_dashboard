@@ -114,7 +114,7 @@ fun seriesColor(name: String, index: Int): Color {
 
 // ── 圖表內容(可全螢幕橫向放大檢視) ──────────────────
 /** 橫條圖點擊列的明細模式。 */
-enum class HBarClick { None, DeptBranch, BranchDept, BedBranch, BranchIncome }
+enum class HBarClick { None, DeptBranch, BranchDept, BedBranch, BranchIncome, DivDept, IpdDivDept }
 
 /** 直條圖點擊長條的明細模式。 */
 enum class VBarClick { None, DeptBranch, PhysDept, BranchIncome, OpsMonth }
@@ -134,7 +134,8 @@ sealed class ChartContent {
         override val title: String,
         val data: LineChartData,
         val yFormatter: (Double) -> String = Fmt::compact,
-        val monthDef: BranchMetricDef? = null // 點月份 → 各院區多指標明細卡
+        val monthDef: BranchMetricDef? = null, // 點月份 → 各院區多指標明細卡
+        val clickAction: HBarClick = HBarClick.None // 點細項/部別 → 各科別明細卡
     ) : ChartContent()
 
     data class HBar(
@@ -260,23 +261,64 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
             when (content) {
                 is ChartContent.Line -> {
                     var metricYm by remember(content) { mutableStateOf<Int?>(null) }
-                    XWindowZoom(content.data.xLabels.size) { win ->
-                        LineChart(
-                            content.data,
-                            height = chartHeight.coerceAtLeast(160.dp),
-                            yFormatter = content.yFormatter,
-                            interactive = true,
-                            window = win,
-                            onPointSelected = { info ->
-                                if (content.monthDef != null) {
-                                    info?.xLabel?.let { l ->
-                                        parseYmLabel(l)?.let { (y, mo) -> metricYm = y * 100 + mo }
+                    var selectedDiv by remember(content) { mutableStateOf<String?>(null) }
+                    Column {
+                        if (content.clickAction in listOf(HBarClick.DivDept, HBarClick.IpdDivDept)) {
+                            val divNames = content.data.series.filter { !it.dashed && !it.name.contains("(去年)") }.map { it.name }
+                            if (divNames.isNotEmpty()) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("點選部別看科別明細：", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                    divNames.forEach { d ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { selectedDiv = d }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(d, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
-                                } else {
-                                    pointInfo = info
                                 }
                             }
-                        )
+                        }
+                        XWindowZoom(content.data.xLabels.size) { win ->
+                            LineChart(
+                                content.data,
+                                height = chartHeight.coerceAtLeast(160.dp),
+                                yFormatter = content.yFormatter,
+                                interactive = true,
+                                window = win,
+                                onPointSelected = { info ->
+                                    if (content.monthDef != null) {
+                                        info?.xLabel?.let { l ->
+                                            parseYmLabel(l)?.let { (y, mo) -> metricYm = y * 100 + mo }
+                                        }
+                                    } else {
+                                        pointInfo = info
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    if (selectedDiv != null) {
+                        if (content.clickAction == HBarClick.DivDept) {
+                            DivDeptCard(
+                                vm, selectedDiv!!,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedDiv = null }
+                            )
+                        } else if (content.clickAction == HBarClick.IpdDivDept) {
+                            IpdDivDeptCard(
+                                vm, selectedDiv!!,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedDiv = null }
+                            )
+                        }
                     }
                     val def = content.monthDef
                     if (def != null) {
@@ -326,6 +368,20 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                         HBarClick.BranchDept -> selectedRow?.let { branch ->
                             BranchDeptCard(
                                 vm, branch,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedRow = null }
+                            )
+                        }
+                        HBarClick.DivDept -> selectedRow?.let { div ->
+                            DivDeptCard(
+                                vm, div,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                onDismiss = { selectedRow = null }
+                            )
+                        }
+                        HBarClick.IpdDivDept -> selectedRow?.let { div ->
+                            IpdDivDeptCard(
+                                vm, div,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 onDismiss = { selectedRow = null }
                             )
@@ -792,6 +848,154 @@ private fun BranchDeptCard(
                         }
                     }
                     Recent3Line(recent3[s.dept] ?: emptyList(), Fmt::compact)
+                }
+            }
+        }
+    }
+}
+
+/** 部別門診各科別明細卡片(點擊「各部別門診人次」部別列或放大細項顯示)。 */
+@Composable
+private fun DivDeptCard(
+    vm: DashboardViewModel,
+    div: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val stats by produceState<List<DashboardRepo.DivDeptOpdStat>>(emptyList(), div) {
+        value = withContext(Dispatchers.IO) { vm.repo.divOpdDeptStats(vm.filters.value, div) }
+    }
+    val periodNote = periodNoteOf(vm)
+
+    Card(
+        modifier
+            .fillMaxWidth(0.94f)
+            .padding(10.dp)
+            .clickable(onClick = onDismiss),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(
+            Modifier
+                .heightIn(max = 340.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "🏥 $div 各科別門診人次明細",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("✕", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+            }
+            if (periodNote.isNotEmpty()) {
+                Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            Spacer(Modifier.height(4.dp))
+            if (stats.isEmpty()) {
+                Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            } else {
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("門診 ${Fmt.int(s.opd)}", style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.width(8.dp))
+                            Text("診次 ${Fmt.int(s.sessions)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.width(6.dp))
+                            Text("平均每診 ${String.format("%.1f", s.avgPerSession)}人", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (s.opdPrior != null && s.opdPrior > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                val d = s.deltaPct ?: 0.0
+                                val sign = if (d >= 0) "+" else ""
+                                val up = d >= 0
+                                Text("去年同期 ${Fmt.compact(s.opdPrior)} ($sign${String.format("%.1f%%", d)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                            }
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 部別住院各科別明細卡片(點擊「住院人日月趨勢（依部別）」部別列或放大細項顯示)。 */
+@Composable
+private fun IpdDivDeptCard(
+    vm: DashboardViewModel,
+    div: String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    val stats by produceState<List<DashboardRepo.DivDeptIpdStat>>(emptyList(), div) {
+        value = withContext(Dispatchers.IO) { vm.repo.ipdDivDeptDaysStats(vm.filters.value, div) }
+    }
+    val periodNote = periodNoteOf(vm)
+
+    Card(
+        modifier
+            .fillMaxWidth(0.94f)
+            .padding(10.dp)
+            .clickable(onClick = onDismiss),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(
+            Modifier
+                .heightIn(max = 340.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "🏥 $div 各科別住院明細",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text("✕", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+            }
+            if (periodNote.isNotEmpty()) {
+                Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+            }
+            Spacer(Modifier.height(4.dp))
+            if (stats.isEmpty()) {
+                Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            } else {
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("人日 ${Fmt.int(s.days)}", style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.width(8.dp))
+                            Text("人次 ${Fmt.int(s.adm)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.width(6.dp))
+                            Text("平均 ${String.format("%.1f日", s.los)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (s.daysPrior != null && s.daysPrior > 0) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                val d = s.deltaPct ?: 0.0
+                                val sign = if (d >= 0) "+" else ""
+                                val up = d >= 0
+                                Text("人日去年同期 ${Fmt.compact(s.daysPrior)} ($sign${String.format("%.1f%%", d)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                            }
+                        }
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
             }
         }
@@ -1745,10 +1949,10 @@ fun HBarChart(
 
                 val rowTotal = row.segments.sumOf { it.value }
                 val barW = xOf(rowTotal)
-                val isYoyBranch = (BRANCH_COLORS[row.name] != null) && row.segments.any { it.label.contains("去年") }
-                val branchColor = BRANCH_COLORS[row.name]
-                val colors = if (isYoyBranch && branchColor != null) {
-                    listOf(branchColor, branchColor)
+                val isYoyRow = row.segments.any { it.label.contains("去年") }
+                val mainColor = BRANCH_COLORS[row.name] ?: seriesColor(row.name, ri)
+                val colors = if (isYoyRow) {
+                    listOf(mainColor, mainColor)
                 } else {
                     row.segments.mapIndexed { si, _ -> seriesColor(row.segments[si].label, si) }
                 }
@@ -1792,10 +1996,10 @@ fun HBarChart(
                     val vtxt = valueFormatter(mainSeg.value)
                     val vw = textMeasurer.measure(AnnotatedString(vtxt), headStyle).size.width
                     if (vw < size.width - endX) {
-                        if (!hasDrawnInside || !isYoyBranch) {
+                        if (!hasDrawnInside || !isYoyRow) {
                             drawText(textMeasurer, vtxt, topLeft = Offset(endX, y + barH / 2 - 7.dp.toPx()), style = headStyle)
                         }
-                        val textOffset = if (!hasDrawnInside || !isYoyBranch) endX + vw + 8.dp.toPx() else endX
+                        val textOffset = if (!hasDrawnInside || !isYoyRow) endX + vw + 8.dp.toPx() else endX
                         if (row.trailing != null) {
                             val tr = row.trailing
                             val trStyle = TextStyle(fontSize = 8.5.sp, color = outlineColor)

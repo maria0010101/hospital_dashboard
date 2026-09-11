@@ -289,14 +289,19 @@ class DashboardRepo(private val db: HospitalDb) {
             yoySql = yoy, yoyParams = if (f.showYoy) py else emptyArray())
     }
 
-    /** 急診人次月趨勢(依院區)，僅 er>0 的點。 */
+    /** 急診人次月趨勢(依院區)，含去年同期虛線。 */
     fun erMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
         val sql = """SELECT year, month, branch_name,
             SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
             FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
+        val yoySql = if (f.showYoy) """SELECT year, month, branch_name,
+            SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)), SUM(CAST(er_visit AS REAL))
+            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
         return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(5),
-            keepPoint = { num(it[5])?.let { v -> v > 0 } ?: false })
+            keepPoint = { num(it[5])?.let { v -> v > 0 } ?: false },
+            yoySql = yoySql, yoyParams = py)
     }
 
     /** 科別門診人次 (Top n)：單一橫條由大到小 + 平均每診人次(小數 1 位)。 */
@@ -319,7 +324,23 @@ class DashboardRepo(private val db: HospitalDb) {
         )
     }
 
-    /** 初診/複診 圓餅圖（移除聯醫初診項目）。 */
+    /** 初診人次月趨勢(依院區)，含去年同期虛線。 */
+    fun firstVisitMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
+        val sql = """SELECT year, month, branch_name, SUM(CAST(first_visit_count AS REAL))
+            FROM outpatient_service WHERE $w GROUP BY year, month, branch_name"""
+        val yoySql = if (f.showYoy) """SELECT year, month, branch_name, SUM(CAST(first_visit_count AS REAL))
+            FROM outpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = py)
+    }
+
+    /** 各院區初診人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchFirstVisitBar(f: Filters): HBarData =
+        buildYoyHBar(f, "outpatient_service", "branch_name", "first_visit_count", "初診人次")
+
+    /** 初診/複診 圓餅圖（保留相容）。 */
     fun firstReturnPie(f: Filters): PieData {
         val (w, p) = whereFor(f, true, 0)
         val rows = db.query(
@@ -333,35 +354,290 @@ class DashboardRepo(private val db: HospitalDb) {
         return PieData(listOf(PieSlice("初診人次", fv), PieSlice("複診人次", rv)))
     }
 
-    /** 各部別門診人次趨勢。 */
+    /** 各部別門診人次趨勢，含去年同期虛線。 */
     fun deptDivMonthly(f: Filters): LineChartData {
         val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
         val sql = """SELECT year, month, dept_div, SUM(CAST(opd_visit_count AS REAL))
-            FROM outpatient_service WHERE $w GROUP BY year, month, dept_div"""
-        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3))
+            FROM outpatient_service WHERE $w AND dept_div IS NOT NULL AND dept_div != '' GROUP BY year, month, dept_div"""
+        val yoySql = if (f.showYoy) """SELECT year, month, dept_div, SUM(CAST(opd_visit_count AS REAL))
+            FROM outpatient_service WHERE $wy AND dept_div IS NOT NULL AND dept_div != '' GROUP BY year, month, dept_div""" else null
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = py)
     }
 
-    /** 各院區門診人次(橫條，降冪；含去年同期半透明比對)。 */
-    fun branchOpdBar(f: Filters): HBarData {
+    /** 各部別門診人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun deptDivOpdBar(f: Filters): HBarData =
+        buildYoyHBar(f, "outpatient_service", "dept_div", "opd_visit_count", "門診人次")
+
+    data class DivDeptOpdStat(
+        val dept: String,
+        val opd: Double,
+        val sessions: Double,
+        val avgPerSession: Double,
+        val opdPrior: Double?,
+        val deltaPct: Double?
+    )
+
+    /** 取得指定部別下各科別門診人次明細 (含去年同期比較)。 */
+    fun divOpdDeptStats(f: Filters, div: String): List<DivDeptOpdStat> {
+        val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
+        val curRows = db.query(
+            "SELECT dept, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE $w AND dept_div=? GROUP BY dept",
+            arrayOf(*p, div)
+        )
+        val curMap = curRows.associate {
+            (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) to (num(it[2]) ?: 0.0))
+        }
+        val priorMap = if (f.showYoy && wy.isNotEmpty()) {
+            val pRows = db.query(
+                "SELECT dept, SUM(CAST(opd_visit_count AS REAL)) " +
+                    "FROM outpatient_service WHERE $wy AND dept_div=? GROUP BY dept",
+                arrayOf(*py, div)
+            )
+            pRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        val allDepts = (curMap.keys + priorMap.keys).filter { it.isNotEmpty() }.distinct()
+        return allDepts.map { dept ->
+            val (curOpd, sess) = curMap[dept] ?: (0.0 to 0.0)
+            val prevOpd = priorMap[dept]
+            val avg = if (sess > 0) curOpd / sess else 0.0
+            val deltaPct = if (prevOpd != null && prevOpd > 0) (curOpd - prevOpd) / prevOpd * 100.0 else null
+            DivDeptOpdStat(dept, curOpd, sess, avg, prevOpd, deltaPct)
+        }.sortedByDescending { it.opd }
+    }
+
+    /** 通用重疊橫條圖查詢 (依維度欄位加總數值欄位，含去年同期半透明比對)。 */
+    private fun buildYoyHBar(
+        f: Filters,
+        table: String,
+        dimCol: String,
+        valCol: String,
+        curLabel: String,
+        unit: String = "",
+        customFormatter: ((Double) -> String)? = null
+    ): HBarData {
         val (w, p) = whereFor(f, true, 0)
         val rows = db.query(
-            "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
-                "WHERE $w GROUP BY branch_name", p)
+            "SELECT $dimCol, SUM(CAST($valCol AS REAL)) FROM $table " +
+                "WHERE $w AND $dimCol IS NOT NULL AND $dimCol != '' GROUP BY $dimCol", p)
         val currentMap = rows.mapNotNull { r ->
-            val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+            val d = r.getOrNull(0)?.toString() ?: return@mapNotNull null
             val v = num(r.getOrNull(1)) ?: 0.0
-            b to v
+            d to v
         }.toMap()
 
         val yoyMap = if (f.showYoy) {
             val (wy, py) = whereFor(f, true, -1)
             val yrows = db.query(
-                "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)) FROM outpatient_service " +
-                    "WHERE $wy GROUP BY branch_name", py)
+                "SELECT $dimCol, SUM(CAST($valCol AS REAL)) FROM $table " +
+                    "WHERE $wy AND $dimCol IS NOT NULL AND $dimCol != '' GROUP BY $dimCol", py)
+            yrows.mapNotNull { r ->
+                val d = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+                val v = num(r.getOrNull(1)) ?: 0.0
+                d to v
+            }.toMap()
+        } else emptyMap()
+
+        val allDims = (currentMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
+        val items = allDims.map { d ->
+            val cur = currentMap[d] ?: 0.0
+            val prev = yoyMap[d] ?: 0.0
+            Triple(d, cur, prev)
+        }.filter { it.second > 0 || it.third > 0 }
+            .sortedByDescending { it.second }
+
+        if (f.showYoy && yoyMap.isNotEmpty()) {
+            val hbarRows = items.map { (d, cur, prev) ->
+                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
+                val prevStr = customFormatter?.invoke(prev) ?: Fmt.compact(prev)
+                val trailing = if (deltaPct != null) {
+                    val sign = if (deltaPct >= 0) "+" else ""
+                    "去年 $prevStr$unit ($sign${String.format("%.1f%%", deltaPct)})"
+                } else if (prev > 0) {
+                    "去年 $prevStr$unit"
+                } else null
+
+                HBarRow(
+                    name = d,
+                    segments = listOf(
+                        BarSegment("去年同期", prev),
+                        BarSegment(curLabel, cur)
+                    ),
+                    trailing = trailing
+                )
+            }
+            return HBarData(hbarRows, overlap = true)
+        } else {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment(curLabel, it.second))) })
+        }
+    }
+
+    /** 各院區門診人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchOpdBar(f: Filters): HBarData =
+        buildYoyHBar(f, "outpatient_service", "branch_name", "opd_visit_count", "門診人次")
+
+    /** 各院區急診人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchErBar(f: Filters): HBarData =
+        buildYoyHBar(f, "outpatient_service", "branch_name", "er_visit", "急診人次")
+
+    // ══════════ TAB2 住院服務 ════════════════════════
+    private fun ipdSql(f: Filters, offset: Int): Pair<String, Array<Any?>> {
+        val (w, p) = whereFor(f, true, offset)
+        return """SELECT year, month, branch_name,
+            SUM(CAST(admission_count AS REAL)), SUM(CAST(discharge_count AS REAL)),
+            SUM(CAST(admission_days AS REAL)), SUM(CAST(discharge_days AS REAL))
+            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name""" to p
+    }
+
+    /** 住院人次月趨勢(依院區)，含去年同期虛線。 */
+    fun ipdMonthly(f: Filters): LineChartData {
+        val (sql, p) = ipdSql(f, 0)
+        val (wsql, wp) = if (f.showYoy) ipdSql(f, -1) else null to emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = if (f.showYoy) wsql else null,
+            yoyParams = if (f.showYoy) wp else emptyArray())
+    }
+
+    /** 各院區住院人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchIpdBar(f: Filters): HBarData =
+        buildYoyHBar(f, "inpatient_service", "branch_name", "admission_count", "住院人次")
+
+    /** 出院人次月趨勢(依院區)，含去年同期虛線。 */
+    fun dischargeMonthly(f: Filters): LineChartData {
+        val (sql, p) = ipdSql(f, 0)
+        val (wsql, wp) = if (f.showYoy) ipdSql(f, -1) else null to emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(4),
+            yoySql = if (f.showYoy) wsql else null,
+            yoyParams = if (f.showYoy) wp else emptyArray())
+    }
+
+    /** 各院區出院人次(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchDischargeBar(f: Filters): HBarData =
+        buildYoyHBar(f, "inpatient_service", "branch_name", "discharge_count", "出院人次")
+
+    /** 住院人日月趨勢(依院區)，含去年同期虛線。 */
+    fun ipdAdmissionDaysMonthly(f: Filters): LineChartData {
+        val (sql, p) = ipdSql(f, 0)
+        val (wsql, wp) = if (f.showYoy) ipdSql(f, -1) else null to emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(5),
+            yoySql = if (f.showYoy) wsql else null,
+            yoyParams = if (f.showYoy) wp else emptyArray())
+    }
+
+    /** 各院區住院人日(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchIpdDaysBar(f: Filters): HBarData =
+        buildYoyHBar(f, "inpatient_service", "branch_name", "admission_days", "住院人日")
+
+    /** 出院人日月趨勢(依院區)，含去年同期虛線。 */
+    fun ipdDischargeDaysMonthly(f: Filters): LineChartData {
+        val (sql, p) = ipdSql(f, 0)
+        val (wsql, wp) = if (f.showYoy) ipdSql(f, -1) else null to emptyArray()
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(6),
+            yoySql = if (f.showYoy) wsql else null,
+            yoyParams = if (f.showYoy) wp else emptyArray())
+    }
+
+    /** 各院區出院人日(橫條，降冪；含去年同期半透明比對)。 */
+    fun branchDischargeDaysBar(f: Filters): HBarData =
+        buildYoyHBar(f, "inpatient_service", "branch_name", "discharge_days", "出院人日")
+
+    /** 住院人日月趨勢(依部別)，含去年同期虛線。 */
+    fun ipdDeptDivDaysMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
+        val sql = """SELECT year, month, dept_div, SUM(CAST(admission_days AS REAL))
+            FROM inpatient_service WHERE $w AND dept_div IS NOT NULL AND dept_div != '' GROUP BY year, month, dept_div"""
+        val yoySql = if (f.showYoy) """SELECT year, month, dept_div, SUM(CAST(admission_days AS REAL))
+            FROM inpatient_service WHERE $wy AND dept_div IS NOT NULL AND dept_div != '' GROUP BY year, month, dept_div""" else null
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = py)
+    }
+
+    /** 各部別住院人日(橫條，降冪；含去年同期半透明比對)。 */
+    fun ipdDeptDivDaysBar(f: Filters): HBarData =
+        buildYoyHBar(f, "inpatient_service", "dept_div", "admission_days", "住院人日")
+
+    data class DivDeptIpdStat(
+        val dept: String,
+        val days: Double,
+        val adm: Double,
+        val los: Double,
+        val daysPrior: Double?,
+        val deltaPct: Double?
+    )
+
+    /** 取得指定部別下各科別住院明細 (人日、人次、平均住院日、去年同期比較)。 */
+    fun ipdDivDeptDaysStats(f: Filters, div: String): List<DivDeptIpdStat> {
+        val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
+        val curRows = db.query(
+            "SELECT dept, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
+                "FROM inpatient_service WHERE $w AND dept_div=? GROUP BY dept",
+            arrayOf(*p, div)
+        )
+        val curMap = curRows.associate {
+            (it[0]?.toString() ?: "") to ((num(it[1]) ?: 0.0) to (num(it[2]) ?: 0.0))
+        }
+        val priorMap = if (f.showYoy && wy.isNotEmpty()) {
+            val pRows = db.query(
+                "SELECT dept, SUM(CAST(admission_days AS REAL)) " +
+                    "FROM inpatient_service WHERE $wy AND dept_div=? GROUP BY dept",
+                arrayOf(*py, div)
+            )
+            pRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        val allDepts = (curMap.keys + priorMap.keys).filter { it.isNotEmpty() }.distinct()
+        return allDepts.map { dept ->
+            val (days, adm) = curMap[dept] ?: (0.0 to 0.0)
+            val prevDays = priorMap[dept]
+            val los = if (adm > 0) days / adm else 0.0
+            val deltaPct = if (prevDays != null && prevDays > 0) (days - prevDays) / prevDays * 100.0 else null
+            DivDeptIpdStat(dept, days, adm, los, prevDays, deltaPct)
+        }.sortedByDescending { it.days }
+    }
+
+    /** 平均住院日月趨勢(依院區)，含去年同期虛線。 */
+    fun alosMonthly(f: Filters): LineChartData {
+        val (w, p) = whereFor(f, true, 0)
+        val (wy, py) = if (f.showYoy) whereFor(f, true, -1) else "" to emptyArray()
+        val sql = """SELECT year, month, branch_name,
+            ROUND(SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(admission_count AS REAL)), 0), 1)
+            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name"""
+        val yoySql = if (f.showYoy) """SELECT year, month, branch_name,
+            ROUND(SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(admission_count AS REAL)), 0), 1)
+            FROM inpatient_service WHERE $wy GROUP BY year, month, branch_name""" else null
+        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
+            yoySql = yoySql, yoyParams = py)
+    }
+
+    /** 各院區平均住院日(橫條，含去年同期半透明比對)。 */
+    fun branchAlosBar(f: Filters): HBarData {
+        val (w, p) = whereFor(f, true, 0)
+        val rows = db.query(
+            "SELECT branch_name, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
+                "FROM inpatient_service WHERE $w GROUP BY branch_name", p)
+        val currentMap = rows.mapNotNull { r ->
+            val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
+            val days = num(r.getOrNull(1)) ?: 0.0
+            val adm = num(r.getOrNull(2)) ?: 0.0
+            if (adm > 0) b to (days / adm) else null
+        }.toMap()
+
+        val yoyMap = if (f.showYoy) {
+            val (wy, py) = whereFor(f, true, -1)
+            val yrows = db.query(
+                "SELECT branch_name, SUM(CAST(admission_days AS REAL)), SUM(CAST(admission_count AS REAL)) " +
+                    "FROM inpatient_service WHERE $wy GROUP BY branch_name", py)
             yrows.mapNotNull { r ->
                 val b = r.getOrNull(0)?.toString() ?: return@mapNotNull null
-                val v = num(r.getOrNull(1)) ?: 0.0
-                b to v
+                val days = num(r.getOrNull(1)) ?: 0.0
+                val adm = num(r.getOrNull(2)) ?: 0.0
+                if (adm > 0) b to (days / adm) else null
             }.toMap()
         } else emptyMap()
 
@@ -378,46 +654,24 @@ class DashboardRepo(private val db: HospitalDb) {
                 val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
                 val trailing = if (deltaPct != null) {
                     val sign = if (deltaPct >= 0) "+" else ""
-                    "去年 ${Fmt.compact(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
+                    "去年 ${String.format("%.1f日", prev)} ($sign${String.format("%.1f%%", deltaPct)})"
                 } else if (prev > 0) {
-                    "去年 ${Fmt.compact(prev)}"
+                    "去年 ${String.format("%.1f日", prev)}"
                 } else null
 
                 HBarRow(
                     name = b,
                     segments = listOf(
                         BarSegment("去年同期", prev),
-                        BarSegment("門診人次", cur)
+                        BarSegment("平均住院日", cur)
                     ),
                     trailing = trailing
                 )
             }
             return HBarData(hbarRows, overlap = true)
         } else {
-            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("門診人次", it.second))) })
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("平均住院日", it.second))) })
         }
-    }
-
-    // ══════════ TAB2 住院服務 ════════════════════════
-    private fun ipdSql(f: Filters, offset: Int): Pair<String, Array<Any?>> {
-        val (w, p) = whereFor(f, true, offset)
-        return """SELECT year, month, branch_name,
-            SUM(CAST(admission_count AS REAL)), SUM(CAST(discharge_count AS REAL)),
-            SUM(CAST(admission_days AS REAL)), SUM(CAST(discharge_days AS REAL))
-            FROM inpatient_service WHERE $w GROUP BY year, month, branch_name""" to p
-    }
-
-    fun ipdMonthly(f: Filters): LineChartData {
-        val (sql, p) = ipdSql(f, 0)
-        val (wsql, wp) = if (f.showYoy) ipdSql(f, -1) else null to emptyArray()
-        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(3),
-            yoySql = if (f.showYoy) wsql else null,
-            yoyParams = if (f.showYoy) wp else emptyArray())
-    }
-
-    fun dischargeMonthly(f: Filters): LineChartData {
-        val (sql, p) = ipdSql(f, 0)
-        return buildLine(sql, p, groupColIdx = 2, valueIdxs = intArrayOf(4))
     }
 
     /** 住院 vs 出院人日趨勢(全院不分院區)。 */
@@ -432,17 +686,6 @@ class DashboardRepo(private val db: HospitalDb) {
         fun ser(idx: Int, name: String) = LineSeries(name,
             xKeys.map { k -> rows.firstOrNull { ymSort(it[0], it[1]) == k.first }?.let { num(it[idx]) } })
         return LineChartData(xLabels, listOf(ser(2, "住院人日"), ser(3, "出院人日")))
-    }
-
-    fun branchIpdBar(f: Filters): HBarData {
-        val (w, p) = whereFor(f, true, 0)
-        val rows = db.query(
-            "SELECT branch, SUM(CAST(admission_count AS REAL)) FROM inpatient_service " +
-                "WHERE $w GROUP BY branch_name", p)
-        val items = rows.mapNotNull { r ->
-            num(r[1])?.let { v -> if (v > 0) r[0]?.toString()?.let { it to v } else null }
-        }.sortedBy { it.second }
-        return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("住院人次", it.second))) })
     }
 
     /** 單一科別各院區統計(含去年同期；依目前篩選區間累計)。 */

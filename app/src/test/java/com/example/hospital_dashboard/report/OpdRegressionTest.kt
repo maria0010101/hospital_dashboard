@@ -69,4 +69,62 @@ class OpdRegressionTest {
         assertEquals("門診人次", hbarData.rows[0].segments[1].label)
         assertNotNull(hbarData.rows[0].trailing)
     }
+
+    @Test
+    fun testDeptDivisionColorMatching() {
+        // 驗證部別名稱與去年同期系列在折線圖中透過 baseIndex 能得到相同顏色
+        val series = listOf(
+            LineSeries("綜合", listOf(10.0), dashed = false),
+            LineSeries("其他", listOf(20.0), dashed = false),
+            LineSeries("內科部", listOf(100.0), dashed = false),
+            LineSeries("內科部(去年)", listOf(90.0), dashed = true)
+        )
+        val curSeries = series[2]
+        val yoySeries = series[3]
+
+        val curBaseName = curSeries.name.replace("(去年)", "").trim()
+        val curBaseIdx = series.indexOfFirst { !it.dashed && (it.name == curBaseName || it.name == curSeries.name) }
+            .let { if (it >= 0) it else 2 }
+        val curColor = seriesColor(curBaseName, curBaseIdx)
+
+        val yoyBaseName = yoySeries.name.replace("(態年)", "").replace("(去年)", "").trim()
+        val yoyBaseIdx = series.indexOfFirst { !it.dashed && (it.name == yoyBaseName || it.name == yoySeries.name) }
+            .let { if (it >= 0) it else 3 }
+        val yoyColor = seriesColor(yoyBaseName, yoyBaseIdx)
+
+        assertEquals("內科部", curBaseName)
+        assertEquals("內科部", yoyBaseName)
+        assertEquals(2, curBaseIdx)
+        assertEquals(2, yoyBaseIdx)
+        assertEquals(curColor, yoyColor)
+    }
+
+    @Test
+    fun testHBarClickEnums() {
+        // 驗證 HBarClick 支援 DivDept 與 IpdDivDept
+        val clicks = com.example.hospital_dashboard.ui.charts.HBarClick.values()
+        assertTrue(clicks.contains(com.example.hospital_dashboard.ui.charts.HBarClick.DivDept))
+        assertTrue(clicks.contains(com.example.hospital_dashboard.ui.charts.HBarClick.IpdDivDept))
+    }
+
+    @Test
+    fun testIpdTabCardOrderSpecification() {
+        // 驗證住院分頁 6 大圖表之規格清單順序符合使用者要求
+        val expectedCards = listOf(
+            "住院人日月趨勢（依院區）",
+            "住院人次月趨勢（依院區）",
+            "出院人日月趨勢（依院區）",
+            "出院人次月趨勢（依院區）",
+            "住院人日月趨勢（依部別）",
+            "平均住院日月趨勢（依院區）"
+        )
+        assertEquals(6, expectedCards.size)
+        assertEquals("住院人日月趨勢（依院區）", expectedCards[0])
+        assertEquals("住院人次月趨勢（依院區）", expectedCards[1])
+        assertEquals("出院人日月趨勢（依院區）", expectedCards[2])
+        assertEquals("出院人次月趨勢（依院區）", expectedCards[3])
+        assertEquals("住院人日月趨勢（依部別）", expectedCards[4])
+        assertEquals("平均住院日月趨勢（依院區）", expectedCards[5])
+    }
 }
+

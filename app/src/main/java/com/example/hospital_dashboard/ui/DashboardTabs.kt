@@ -101,9 +101,10 @@ private fun TabColumn(content: @Composable () -> Unit) {
 private fun LineCard(
     vm: DashboardViewModel, title: String, data: LineChartData?,
     height: Dp = 220.dp, fmt: (Double) -> String = Fmt::compact,
-    monthDef: BranchMetricDef? = null
+    monthDef: BranchMetricDef? = null,
+    clickAction: HBarClick = HBarClick.None
 ) {
-    ChartCard(title, onClick = data?.let { { vm.openZoom(ChartContent.Line(title, it, fmt, monthDef)) } }) {
+    ChartCard(title, onClick = data?.let { { vm.openZoom(ChartContent.Line(title, it, fmt, monthDef, clickAction)) } }) {
         data?.let { LineChart(it, height = height, yFormatter = fmt) } ?: LoadingBox()
     }
 }
@@ -158,29 +159,33 @@ private fun TableCard(vm: DashboardViewModel, title: String, data: TableData?) {
 @Composable
 fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     val opd = loadChart(listOf(filters)) { vm.repo.opdMonthly(filters) }
+    val brOpdBar = loadChart(listOf(filters)) { vm.repo.branchOpdBar(filters) }
+
     val er = loadChart(listOf(filters)) { vm.repo.erMonthly(filters) }
-    val deptTop = loadChart(listOf(filters)) { vm.repo.opdDeptTop(filters) }
-    val pie = loadChart(listOf(filters)) { vm.repo.firstReturnPie(filters) }
+    val brErBar = loadChart(listOf(filters)) { vm.repo.branchErBar(filters) }
+
     val div = loadChart(listOf(filters)) { vm.repo.deptDivMonthly(filters) }
-    val brBar = loadChart(listOf(filters)) { vm.repo.branchOpdBar(filters) }
+    val divBar = loadChart(listOf(filters)) { vm.repo.deptDivOpdBar(filters) }
+
+    val firstVisit = loadChart(listOf(filters)) { vm.repo.firstVisitMonthly(filters) }
+    val brFirstVisitBar = loadChart(listOf(filters)) { vm.repo.branchFirstVisitBar(filters) }
 
     var showFirstSheet by remember { mutableStateOf(false) }
 
     // 判斷是否為單月篩選：使用者篩選單一月份，或資料結果僅單一月份
     val isSingleMonth = filters.months.size == 1 || (opd != null && opd.xLabels.size == 1)
+    val monthSuffix = if (filters.months.size == 1) {
+        val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
+        "（$yStr${filters.months.first()}月）"
+    } else ""
 
     TabColumn {
+        // 1. 門診人次月趨勢 / 各院區門診人次
         if (isSingleMonth) {
-            val singleMonthTitle = if (filters.months.size == 1) {
-                val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
-                "各院區門診人次（$yStr${filters.months.first()}月）"
-            } else {
-                "各院區門診人次"
-            }
             HBarCard(
                 vm = vm,
-                title = singleMonthTitle,
-                data = brBar,
+                title = "各院區門診人次$monthSuffix",
+                data = brOpdBar,
                 height = 240.dp,
                 clickAction = HBarClick.BranchDept
             )
@@ -188,15 +193,44 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
             LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
         }
 
-        LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
-        HBarCard(vm, "科別門診人次（TOP20）", deptTop, height = 260.dp, fmt = Fmt::k,
-            clickAction = HBarClick.DeptBranch)
-        // 初診/複診比例：點擊直接顯示各院區初診人次與初診率(不放大)
-        ChartCard("初診/複診比例", onClick = { showFirstSheet = true }) {
-            pie?.let { PieChart(it) } ?: LoadingBox()
+        // 2. 急診人次月趨勢 / 各院區急診人次
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區急診人次$monthSuffix",
+                data = brErBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
         }
-        LineCard(vm, "各部別門診人次趨勢", div, height = 200.dp)
-        // 原第 6 張卡片「各院區門診人次」已合併至首張卡片，單月時於首卡顯示，多月時不重複顯示
+
+        // 3. 各部別門診人次趨勢 (整併原先的科別門診人次 TOP20，改以部別呈現，細項再呈現科別)
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各部別門診人次$monthSuffix",
+                data = divBar,
+                height = 240.dp,
+                clickAction = HBarClick.DivDept
+            )
+        } else {
+            LineCard(vm, "各部別門診人次趨勢", div, height = 200.dp, clickAction = HBarClick.DivDept)
+        }
+
+        // 4. 初診人次 (替代原初診/複診比例圓餅圖)
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區初診人次$monthSuffix",
+                data = brFirstVisitBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "初診人次月趨勢（依院區）", firstVisit, height = 200.dp)
+        }
     }
 
     if (showFirstSheet) {
@@ -254,26 +288,115 @@ private fun FirstVisitSheet(
 // ══════════ TAB2 住院服務 ═════════════════════════
 @Composable
 fun IpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
-    val ipd = loadChart(listOf(filters)) { vm.repo.ipdMonthly(filters) }
-    val dis = loadChart(listOf(filters)) { vm.repo.dischargeMonthly(filters) }
-    val days = loadChart(listOf(filters)) { vm.repo.ipdDaysMonthly(filters) }
-    val brBar = loadChart(listOf(filters)) { vm.repo.branchIpdBar(filters) }
-    val stats = loadChart(listOf(filters)) { vm.repo.ipdDeptStats(filters) }
+    // 1. 住院人日（依院區）
+    val admDays = loadChart(listOf(filters)) { vm.repo.ipdAdmissionDaysMonthly(filters) }
+    val brAdmDaysBar = loadChart(listOf(filters)) { vm.repo.branchIpdDaysBar(filters) }
 
-    val admBar = stats?.let {
-        VBarData(it.map { s -> VBarGroup(s.dept, listOf(BarSegment("住院人次", s.adm))) })
-    }
-    val losBar = stats?.let {
-        VBarData(it.sortedBy { s -> s.los }.map { s -> VBarGroup(s.dept, listOf(BarSegment("平均住院日", s.los))) })
-    }
+    // 2. 住院人次（依院區）
+    val ipd = loadChart(listOf(filters)) { vm.repo.ipdMonthly(filters) }
+    val brIpdBar = loadChart(listOf(filters)) { vm.repo.branchIpdBar(filters) }
+
+    // 3. 出院人日（依院區）
+    val disDays = loadChart(listOf(filters)) { vm.repo.ipdDischargeDaysMonthly(filters) }
+    val brDisDaysBar = loadChart(listOf(filters)) { vm.repo.branchDischargeDaysBar(filters) }
+
+    // 4. 出院人次（依院區）
+    val dis = loadChart(listOf(filters)) { vm.repo.dischargeMonthly(filters) }
+    val brDisBar = loadChart(listOf(filters)) { vm.repo.branchDischargeBar(filters) }
+
+    // 5. 住院人日（依部別）
+    val divDays = loadChart(listOf(filters)) { vm.repo.ipdDeptDivDaysMonthly(filters) }
+    val brDivDaysBar = loadChart(listOf(filters)) { vm.repo.ipdDeptDivDaysBar(filters) }
+
+    // 6. 平均住院日（依院區）
+    val alos = loadChart(listOf(filters)) { vm.repo.alosMonthly(filters) }
+    val brAlosBar = loadChart(listOf(filters)) { vm.repo.branchAlosBar(filters) }
+
+    val isSingleMonth = filters.months.size == 1 || (ipd != null && ipd.xLabels.size == 1)
+    val monthSuffix = if (filters.months.size == 1) {
+        val yStr = if (filters.years.size == 1) "民國${filters.years.first()}年" else ""
+        "（$yStr${filters.months.first()}月）"
+    } else ""
 
     TabColumn {
-        LineCard(vm, "住院人次月趨勢（依院區）", ipd, height = 230.dp)
-        LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 200.dp)
-        LineCard(vm, "住院 vs 出院人日趨勢", days, height = 200.dp)
-        HBarCard(vm, "各院區住院人次", brBar, height = 180.dp)
-        VBarCard(vm, "Top 15 科別住院人次", admBar, height = 240.dp, click = VBarClick.DeptBranch)
-        VBarCard(vm, "Top 15 科別平均住院日", losBar, height = 240.dp, click = VBarClick.DeptBranch)
+        // 1. 住院人日月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區住院人日$monthSuffix",
+                data = brAdmDaysBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "住院人日月趨勢（依院區）", admDays, height = 220.dp)
+        }
+
+        // 2. 住院人次月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區住院人次$monthSuffix",
+                data = brIpdBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "住院人次月趨勢（依院區）", ipd, height = 200.dp)
+        }
+
+        // 3. 出院人日月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區出院人日$monthSuffix",
+                data = brDisDaysBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "出院人日月趨勢（依院區）", disDays, height = 200.dp)
+        }
+
+        // 4. 出院人次月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區出院人次$monthSuffix",
+                data = brDisBar,
+                height = 240.dp,
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 200.dp)
+        }
+
+        // 5. 住院人日月趨勢（依部別）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各部別住院人日$monthSuffix",
+                data = brDivDaysBar,
+                height = 240.dp,
+                clickAction = HBarClick.IpdDivDept
+            )
+        } else {
+            LineCard(vm, "住院人日月趨勢（依部別）", divDays, height = 200.dp, clickAction = HBarClick.IpdDivDept)
+        }
+
+        // 6. 平均住院日月趨勢（依院區）
+        if (isSingleMonth) {
+            HBarCard(
+                vm = vm,
+                title = "各院區平均住院日$monthSuffix",
+                data = brAlosBar,
+                height = 240.dp,
+                fmt = { String.format("%.1f日", it) },
+                clickAction = HBarClick.BranchDept
+            )
+        } else {
+            LineCard(vm, "平均住院日月趨勢（依院區）", alos, height = 200.dp, fmt = { String.format("%.1f日", it) })
+        }
     }
 }
 
