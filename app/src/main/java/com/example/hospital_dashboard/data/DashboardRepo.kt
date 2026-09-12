@@ -859,6 +859,31 @@ class DashboardRepo(private val db: HospitalDb) {
             get() = if (opdPrior != null && opdPrior > 0) (opdVisit - opdPrior) / opdPrior * 100.0 else null
     }
 
+    /** 通用圖表下鑽維度統計資料 (院區/部別/科別/醫師別)。 */
+    data class UniversalDrillStat(
+        val name: String,
+        val value: Double,
+        val secondaryValue: Double? = null,
+        val secondaryLabel: String? = null,
+        val avgLabel: String? = null,
+        val prior: Double? = null,
+        val extraId: String? = null,
+        val tag: String? = null
+    ) {
+        val deltaPct: Double?
+            get() = if (prior != null && prior > 0) (value - prior) / prior * 100.0 else null
+        val avgPerUnit: Double?
+            get() = if (secondaryValue != null && secondaryValue > 0) value / secondaryValue else null
+    }
+
+    private data class MetricSpec(
+        val table: String,
+        val valExpr: String,
+        val secExpr: String? = null,
+        val secLbl: String? = null,
+        val avgLbl: String? = null
+    )
+
     /** 查詢指定院區與年月之各部別門診人次統計。 */
     fun opdBranchDivStats(
         branch: String,
@@ -1028,6 +1053,242 @@ class DashboardRepo(private val db: HospitalDb) {
         }
     }
 
+    /**
+     * 通用多維度下鑽統計查詢。
+     * @param metricType "OPD", "ER", "IPD_DAYS", "IPD_COUNT", "DIS_DAYS", "DIS_COUNT", "INC_TOTAL", "INC_SELF"
+     * @param targetLevel "BRANCH", "DIVISION", "DEPARTMENT", "DOCTOR"
+     */
+    fun universalDrillStats(
+        metricType: String,
+        targetLevel: String,
+        branch: String?,
+        deptDiv: String?,
+        dept: String?,
+        year: Int,
+        month: Int,
+        showYoy: Boolean = true
+    ): List<UniversalDrillStat> {
+        return try {
+            val cleanBranch = branch?.replace("院區", "")?.trim() ?: ""
+            val isAllBranch = cleanBranch.isEmpty() || cleanBranch == "全院" || cleanBranch == "全部"
+            val bCond = if (!isAllBranch) "AND branch_name = ?" else ""
+
+            when (targetLevel) {
+                "BRANCH" -> {
+                    // 用於 Flow B 第二層：在固定部別 (deptDiv) 下展開各院區
+                    val spec = when (metricType) {
+                        "OPD" -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                        "IPD_DAYS" -> MetricSpec("inpatient_service", "SUM(CAST(admission_days AS REAL))", "SUM(CAST(admission_count AS REAL))", "人次", "日/人次")
+                        else -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                    }
+                    val curRows = db.query(
+                        "SELECT branch_name, ${spec.valExpr} ${if (spec.secExpr != null) ", ${spec.secExpr}" else ""} FROM ${spec.table} " +
+                            "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? AND dept_div = ? " +
+                            "AND branch_name IS NOT NULL AND branch_name != '' GROUP BY branch_name",
+                        arrayOf<Any?>(year, month, deptDiv)
+                    )
+                    val priorMap = if (showYoy) {
+                        val priorRows = db.query(
+                            "SELECT branch_name, ${spec.valExpr} FROM ${spec.table} " +
+                                "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? AND dept_div = ? " +
+                                "AND branch_name IS NOT NULL AND branch_name != '' GROUP BY branch_name",
+                            arrayOf<Any?>(year - 1, month, deptDiv)
+                        )
+                        priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+                    } else emptyMap()
+
+                    curRows.mapNotNull { r ->
+                        val b = r[0]?.toString() ?: return@mapNotNull null
+                        val v = num(r[1]) ?: 0.0
+                        if (v <= 0.0) return@mapNotNull null
+                        val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+                        UniversalDrillStat(
+                            name = b,
+                            value = v,
+                            secondaryValue = s,
+                            secondaryLabel = spec.secLbl,
+                            avgLabel = spec.avgLbl,
+                            prior = priorMap[b]
+                        )
+                    }.sortedByDescending { it.value }
+                }
+
+                "DIVISION" -> {
+                    // 用於 Flow A 第二層：在固定院區 (branch) 下展開各部別
+                    val curParams = if (!isAllBranch) arrayOf<Any?>(year, month, cleanBranch) else arrayOf<Any?>(year, month)
+                    val priorParams = if (!isAllBranch) arrayOf<Any?>(year - 1, month, cleanBranch) else arrayOf<Any?>(year - 1, month)
+
+                    val spec = when (metricType) {
+                        "OPD" -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                        "ER" -> MetricSpec("outpatient_service", "SUM(CAST(er_visit AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                        "IPD_DAYS" -> MetricSpec("inpatient_service", "SUM(CAST(admission_days AS REAL))", "SUM(CAST(admission_count AS REAL))", "人次", "日/人次")
+                        "IPD_COUNT" -> MetricSpec("inpatient_service", "SUM(CAST(admission_count AS REAL))", "SUM(CAST(admission_days AS REAL))", "人日", "人日/人次")
+                        "DIS_DAYS" -> MetricSpec("inpatient_service", "SUM(CAST(discharge_days AS REAL))", "SUM(CAST(discharge_count AS REAL))", "人次", "日/人次")
+                        "DIS_COUNT" -> MetricSpec("inpatient_service", "SUM(CAST(discharge_count AS REAL))", "SUM(CAST(discharge_days AS REAL))", "人日", "人日/人次")
+                        "INC_TOTAL" -> MetricSpec("physician_service", "(SUM(CAST(opd_nhi_income AS REAL)) + SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_nhi_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        "INC_SELF" -> MetricSpec("physician_service", "(SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        else -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                    }
+
+                    val curRows = db.query(
+                        "SELECT dept_div, ${spec.valExpr} ${if (spec.secExpr != null) ", ${spec.secExpr}" else ""} FROM ${spec.table} " +
+                            "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond " +
+                            "AND dept_div IS NOT NULL AND dept_div != '' GROUP BY dept_div",
+                        curParams
+                    )
+                    val priorMap = if (showYoy) {
+                        val priorRows = db.query(
+                            "SELECT dept_div, ${spec.valExpr} FROM ${spec.table} " +
+                                "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond " +
+                                "AND dept_div IS NOT NULL AND dept_div != '' GROUP BY dept_div",
+                            priorParams
+                        )
+                        priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+                    } else emptyMap()
+
+                    curRows.mapNotNull { r ->
+                        val div = r[0]?.toString() ?: return@mapNotNull null
+                        val v = num(r[1]) ?: 0.0
+                        if (v <= 0.0) return@mapNotNull null
+                        val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+                        UniversalDrillStat(
+                            name = div,
+                            value = v,
+                            secondaryValue = s,
+                            secondaryLabel = spec.secLbl,
+                            avgLabel = spec.avgLbl,
+                            prior = priorMap[div]
+                        )
+                    }.sortedByDescending { it.value }
+                }
+
+                "DEPARTMENT" -> {
+                    // 用於第三層：在固定院區 (branch) 與部別 (deptDiv) 下展開各科別
+                    val dCond = if (!deptDiv.isNullOrEmpty()) "AND dept_div = ?" else ""
+                    val curParams = mutableListOf<Any?>(year, month)
+                    if (!isAllBranch) curParams.add(cleanBranch)
+                    if (!deptDiv.isNullOrEmpty()) curParams.add(deptDiv)
+
+                    val priorParams = mutableListOf<Any?>(year - 1, month)
+                    if (!isAllBranch) priorParams.add(cleanBranch)
+                    if (!deptDiv.isNullOrEmpty()) priorParams.add(deptDiv)
+
+                    val spec = when (metricType) {
+                        "OPD" -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                        "ER" -> MetricSpec("outpatient_service", "SUM(CAST(er_visit AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                        "IPD_DAYS" -> MetricSpec("inpatient_service", "SUM(CAST(admission_days AS REAL))", "SUM(CAST(admission_count AS REAL))", "人次", "日/人次")
+                        "IPD_COUNT" -> MetricSpec("inpatient_service", "SUM(CAST(admission_count AS REAL))", "SUM(CAST(admission_days AS REAL))", "人日", "人日/人次")
+                        "DIS_DAYS" -> MetricSpec("inpatient_service", "SUM(CAST(discharge_days AS REAL))", "SUM(CAST(discharge_count AS REAL))", "人次", "日/人次")
+                        "DIS_COUNT" -> MetricSpec("inpatient_service", "SUM(CAST(discharge_count AS REAL))", "SUM(CAST(discharge_days AS REAL))", "人日", "人日/人次")
+                        "INC_TOTAL" -> MetricSpec("physician_service", "(SUM(CAST(opd_nhi_income AS REAL)) + SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_nhi_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        "INC_SELF" -> MetricSpec("physician_service", "(SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        else -> MetricSpec("outpatient_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(total_clinic_sessions AS REAL))", "診", "人/診")
+                    }
+
+                    val curRows = db.query(
+                        "SELECT dept, ${spec.valExpr} ${if (spec.secExpr != null) ", ${spec.secExpr}" else ""} FROM ${spec.table} " +
+                            "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond $dCond " +
+                            "AND dept IS NOT NULL AND dept != '' GROUP BY dept",
+                        curParams.toTypedArray()
+                    )
+                    val priorMap = if (showYoy) {
+                        val priorRows = db.query(
+                            "SELECT dept, ${spec.valExpr} FROM ${spec.table} " +
+                                "WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond $dCond " +
+                                "AND dept IS NOT NULL AND dept != '' GROUP BY dept",
+                            priorParams.toTypedArray()
+                        )
+                        priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+                    } else emptyMap()
+
+                    curRows.mapNotNull { r ->
+                        val d = r[0]?.toString() ?: return@mapNotNull null
+                        val v = num(r[1]) ?: 0.0
+                        if (v <= 0.0) return@mapNotNull null
+                        val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+                        UniversalDrillStat(
+                            name = d,
+                            value = v,
+                            secondaryValue = s,
+                            secondaryLabel = spec.secLbl,
+                            avgLabel = spec.avgLbl,
+                            prior = priorMap[d]
+                        )
+                    }.sortedByDescending { it.value }
+                }
+
+                "DOCTOR" -> {
+                    // 用於第四層：在固定院區、科別下展開各醫師
+                    val dCond = if (!dept.isNullOrEmpty()) "AND dept = ?" else ""
+                    val curParams = mutableListOf<Any?>(year, month)
+                    if (!isAllBranch) curParams.add(cleanBranch)
+                    if (!dept.isNullOrEmpty()) curParams.add(dept)
+
+                    val priorParams = mutableListOf<Any?>(year - 1, month)
+                    if (!isAllBranch) priorParams.add(cleanBranch)
+                    if (!dept.isNullOrEmpty()) priorParams.add(dept)
+
+                    val spec = when (metricType) {
+                        "OPD" -> MetricSpec("physician_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(sessions AS REAL))", "診", "人/診")
+                        "ER" -> MetricSpec("physician_service", "SUM(CAST(er_visit AS REAL))", "SUM(CAST(sessions AS REAL))", "診", "人/診")
+                        "IPD_DAYS" -> MetricSpec("physician_service", "SUM(CAST(admission_days AS REAL))", "SUM(CAST(admission_count AS REAL))", "人次", "日/人次")
+                        "INC_TOTAL" -> MetricSpec("physician_service", "(SUM(CAST(opd_nhi_income AS REAL)) + SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_nhi_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        "INC_SELF" -> MetricSpec("physician_service", "(SUM(CAST(opd_selfpay_income AS REAL)) + SUM(CAST(ipd_selfpay_income AS REAL)))")
+                        else -> MetricSpec("physician_service", "SUM(CAST(opd_visit_count AS REAL))", "SUM(CAST(sessions AS REAL))", "診", "人/診")
+                    }
+
+                    val secColSql = if (spec.secExpr != null) ", ${spec.secExpr}" else ""
+                    val curRows = db.query(
+                        "SELECT branch_name, doctor_id, doctor_name, ${spec.valExpr} $secColSql " +
+                            "FROM physician_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond $dCond " +
+                            "AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                            "GROUP BY branch_name, doctor_id, doctor_name",
+                        curParams.toTypedArray()
+                    )
+                    val priorMap = if (showYoy) {
+                        val priorRows = db.query(
+                            "SELECT branch_name, doctor_id, doctor_name, ${spec.valExpr} " +
+                                "FROM physician_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $bCond $dCond " +
+                                "AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                                "GROUP BY branch_name, doctor_id, doctor_name",
+                            priorParams.toTypedArray()
+                        )
+                        priorRows.associate {
+                            val b = it[0]?.toString() ?: ""
+                            val id = it[1]?.toString() ?: ""
+                            val name = it[2]?.toString() ?: ""
+                            "$b-$id-$name" to (num(it[3]) ?: 0.0)
+                        }
+                    } else emptyMap()
+
+                    curRows.mapNotNull { r ->
+                        val b = r[0]?.toString() ?: ""
+                        val id = r[1]?.toString() ?: ""
+                        val name = r[2]?.toString() ?: return@mapNotNull null
+                        val v = num(r[3]) ?: 0.0
+                        if (v <= 0.0) return@mapNotNull null
+                        val s = if (spec.secExpr != null) num(r[4]) ?: 0.0 else null
+                        val key = "$b-$id-$name"
+                        UniversalDrillStat(
+                            name = name,
+                            extraId = id,
+                            tag = if (isAllBranch) b else null,
+                            value = v,
+                            secondaryValue = s,
+                            secondaryLabel = spec.secLbl,
+                            avgLabel = spec.avgLbl,
+                            prior = priorMap[key]
+                        )
+                    }.sortedWith(compareByDescending<UniversalDrillStat> { it.value }.thenByDescending { it.secondaryValue ?: 0.0 })
+                }
+
+                else -> emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /** 各院區初診/複診統計(依目前篩選區間累計)。 */
     class BranchFirstVisitStat(
         val branch: String,
@@ -1068,12 +1329,20 @@ class DashboardRepo(private val db: HospitalDb) {
     }
 
     // ══════════ TAB3 病床利用 ════════════════════════
-    /** 大類別選項（病床分頁篩選以「大類別」為單位）。 */
+    /** 大類別選項（病床分頁篩選以「大類別」為單位，產後（小孩）與其他合併，排序：一般、ICU、特殊、嬰兒床、其他）。 */
     fun bedMajors(f: Filters): List<String> {
         val (w, p) = whereFor(f, false, 0)
         if (w.isEmpty()) return emptyList()
-        return db.query("SELECT DISTINCT major_category FROM bed_type_service WHERE $w AND major_category IS NOT NULL ORDER BY major_category", p)
-            .map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
+        val rows = db.query(
+            "SELECT DISTINCT CASE WHEN major_category = '產後（小孩）' THEN '其他' ELSE major_category END " +
+                "FROM bed_type_service WHERE $w AND major_category IS NOT NULL", p
+        )
+        val raw = rows.mapNotNull { it[0]?.toString() }.filter { it.isNotEmpty() }.distinct()
+        val order = listOf("一般", "ICU", "特殊", "嬰兒床", "其他")
+        return raw.sortedWith(compareBy {
+            val idx = order.indexOf(it)
+            if (idx >= 0) idx else order.size
+        })
     }
 
     fun bedStations(f: Filters, cats: List<String>): List<String> {
@@ -1088,17 +1357,30 @@ class DashboardRepo(private val db: HospitalDb) {
 
     private fun catCond(cats: List<String>): Pair<String, Array<Any?>> {
         if (cats.isEmpty()) return "" to emptyArray()
-        // 病床分頁篩選改以「大類別(major_category)」為單位
-        return "major_category IN (${cats.joinToString(",") { "?" }})" to cats.toTypedArray()
+        // 病床分頁篩選改以「大類別(major_category)」為單位，產後（小孩）與其他合併
+        val expanded = cats.flatMap {
+            if (it == "其他") listOf("其他", "產後（小孩）") else listOf(it)
+        }.distinct()
+        return "major_category IN (${expanded.joinToString(",") { "?" }})" to expanded.toTypedArray()
     }
 
-    /** 篩選範圍內病床資料的最新 (年, 月)。 */
+    /** 篩選區間內病床資料的最新 (年, 月)。 */
     private fun bedLatestYm(f: Filters): Pair<Int, Int>? {
-        val (w, p) = whereFor(f, false, 0)
-        if (w.isEmpty()) return null
+        val parts = mutableListOf<String>()
+        val params = mutableListOf<Any?>()
+        if (f.years.isNotEmpty()) {
+            parts.add("year IN (${f.years.joinToString(",") { "?" }})")
+            params.addAll(f.years)
+        }
+        if (f.months.isNotEmpty()) {
+            parts.add("month IN (${f.months.joinToString(",") { "?" }})")
+            params.addAll(f.months)
+        }
+        val w = if (parts.isNotEmpty()) parts.joinToString(" AND ") else "1=1"
         val r = db.query(
             "SELECT year, month FROM bed_type_service WHERE $w " +
-                "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1", p
+                "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1",
+            params.toTypedArray()
         ).firstOrNull() ?: return null
         val y = r[0]?.toString()?.toIntOrNull() ?: return null
         val m = r[1]?.toString()?.toIntOrNull() ?: return null

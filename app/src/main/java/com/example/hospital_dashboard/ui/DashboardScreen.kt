@@ -89,7 +89,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
         ) {
             KpiRow(vm)
             PrimaryScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 8.dp) {
-                listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🛏️ 佔床率", "🩺 醫師服務", "💰 醫師收入", "🤖 AI 分析").forEachIndexed { i, t ->
+                listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🤖 AI 分析").forEachIndexed { i, t ->
                     Tab(selected = tabIndex == i, onClick = { vm.tabIndex.value = i }, text = { Text(t) })
                 }
             }
@@ -98,10 +98,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                 1 -> IpdTab(vm, filters)
                 2 -> BedTab(vm, filters)
                 3 -> OtherTab(vm, filters)
-                4 -> BedDetailTab(vm, filters)
-                5 -> PhysServiceTab(vm, filters)
-                6 -> PhysIncomeTab(vm, filters)
-                7 -> AnalysisTab(vm)
+                4 -> AnalysisTab(vm)
             }
             Spacer(Modifier.height(24.dp))
         }

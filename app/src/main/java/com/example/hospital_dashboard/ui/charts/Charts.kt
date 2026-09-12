@@ -341,9 +341,10 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                     } else {
                         // 點擊資料點 → 詳細數據工具卡(固定不隨縮放)
                         pointInfo?.let { info ->
-                            if (content.title == "門診人次月趨勢（依院區）" || content.title.contains("門診人次月趨勢")) {
-                                OpdBranchDrillDownCard(
-                                    vm, info, content.yFormatter,
+                            val drillConfig = getDrillMetricConfig(content.title)
+                            if (drillConfig != null) {
+                                UniversalDrillDownCard(
+                                    vm, info, drillConfig, drillConfig.yFormatter ?: content.yFormatter,
                                     modifier = Modifier.align(Alignment.BottomCenter),
                                     onDismiss = { pointInfo = null }
                                 )
@@ -747,22 +748,54 @@ private fun LineTooltipCard(
  * 第 3 層：該院區該部別各科別詳細資訊 (Department)
  * 第 4 層：該院區該部別該科別各醫師服務量詳細資訊 (Doctor)
  */
-private enum class OpdDrillLevel {
-    BRANCH, DIVISION, DEPARTMENT, DOCTOR
+private enum class DrillHierarchyType {
+    BRANCH_FIRST,   // 院區 -> 部別 -> 科別 [-> 醫師別]
+    DIVISION_FIRST  // 部別 -> 院區 -> 科別 -> 醫師別
 }
 
+private enum class UniversalDrillLevel {
+    LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4
+}
+
+private data class DrillMetricConfig(
+    val titleMatch: String,
+    val metricType: String,
+    val unit: String,
+    val hierarchy: DrillHierarchyType = DrillHierarchyType.BRANCH_FIRST,
+    val maxLevels: Int = 4,
+    val yFormatter: ((Double) -> String)? = null
+)
+
+private val DRILL_CONFIGS = listOf(
+    DrillMetricConfig("門診人次月趨勢（依院區）", "OPD", "人次", DrillHierarchyType.BRANCH_FIRST, 4),
+    DrillMetricConfig("急診人次月趨勢（依院區）", "ER", "人次", DrillHierarchyType.BRANCH_FIRST, 4),
+    DrillMetricConfig("各部別門診人次趨勢", "OPD", "人次", DrillHierarchyType.DIVISION_FIRST, 4),
+    DrillMetricConfig("住院人日月趨勢（依院區）", "IPD_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 4),
+    DrillMetricConfig("住院人次月趨勢（依院區）", "IPD_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3),
+    DrillMetricConfig("出院人日月趨勢（依院區）", "DIS_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 3),
+    DrillMetricConfig("出院人次月趨勢（依院區）", "DIS_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3),
+    DrillMetricConfig("住院人日月趨勢（依部別）", "IPD_DAYS", "人日", DrillHierarchyType.DIVISION_FIRST, 4),
+    DrillMetricConfig("總收入趨勢（依院區）", "INC_TOTAL", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money),
+    DrillMetricConfig("自費收入趨勢（依院區）", "INC_SELF", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money)
+)
+
+private fun getDrillMetricConfig(title: String): DrillMetricConfig? =
+    DRILL_CONFIGS.firstOrNull { title == it.titleMatch || title.contains(it.titleMatch) }
+
+/** 通用多維度下鑽詳細資訊卡片 */
 @Composable
-private fun OpdBranchDrillDownCard(
+private fun UniversalDrillDownCard(
     vm: DashboardViewModel,
     info: PointInfo,
+    config: DrillMetricConfig,
     yFormatter: (Double) -> String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
 ) {
-    var level by remember(info) { mutableStateOf(OpdDrillLevel.BRANCH) }
-    var selectedBranch by remember(info) { mutableStateOf<String?>(null) }
-    var selectedDivision by remember(info) { mutableStateOf<String?>(null) }
-    var selectedDepartment by remember(info) { mutableStateOf<String?>(null) }
+    var level by remember(info, config) { mutableStateOf(UniversalDrillLevel.LEVEL_1) }
+    var selectedBranch by remember(info, config) { mutableStateOf<String?>(null) }
+    var selectedDivision by remember(info, config) { mutableStateOf<String?>(null) }
+    var selectedDepartment by remember(info, config) { mutableStateOf<String?>(null) }
 
     val parsedYm: Pair<Int, Int> = remember(info.xLabel) {
         parseYmLabel(info.xLabel) ?: run {
@@ -782,19 +815,27 @@ private fun OpdBranchDrillDownCard(
     // Android 返回鍵攔截：逐層返回
     BackHandler(enabled = true) {
         when (level) {
-            OpdDrillLevel.DOCTOR -> {
-                level = OpdDrillLevel.DEPARTMENT
+            UniversalDrillLevel.LEVEL_4 -> {
+                level = UniversalDrillLevel.LEVEL_3
                 selectedDepartment = null
             }
-            OpdDrillLevel.DEPARTMENT -> {
-                level = OpdDrillLevel.DIVISION
-                selectedDivision = null
+            UniversalDrillLevel.LEVEL_3 -> {
+                level = UniversalDrillLevel.LEVEL_2
+                if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                    selectedDivision = null
+                } else {
+                    selectedBranch = null
+                }
             }
-            OpdDrillLevel.DIVISION -> {
-                level = OpdDrillLevel.BRANCH
-                selectedBranch = null
+            UniversalDrillLevel.LEVEL_2 -> {
+                level = UniversalDrillLevel.LEVEL_1
+                if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                    selectedBranch = null
+                } else {
+                    selectedDivision = null
+                }
             }
-            OpdDrillLevel.BRANCH -> onDismiss()
+            UniversalDrillLevel.LEVEL_1 -> onDismiss()
         }
     }
 
@@ -815,7 +856,7 @@ private fun OpdBranchDrillDownCard(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (level != OpdDrillLevel.BRANCH) {
+                if (level != UniversalDrillLevel.LEVEL_1) {
                     Text(
                         "← 返回",
                         style = MaterialTheme.typography.labelLarge,
@@ -824,24 +865,33 @@ private fun OpdBranchDrillDownCard(
                         modifier = Modifier
                             .clickable {
                                 when (level) {
-                                    OpdDrillLevel.DOCTOR -> {
-                                        level = OpdDrillLevel.DEPARTMENT
+                                    UniversalDrillLevel.LEVEL_4 -> {
+                                        level = UniversalDrillLevel.LEVEL_3
                                         selectedDepartment = null
                                     }
-                                    OpdDrillLevel.DEPARTMENT -> {
-                                        level = OpdDrillLevel.DIVISION
-                                        selectedDivision = null
+                                    UniversalDrillLevel.LEVEL_3 -> {
+                                        level = UniversalDrillLevel.LEVEL_2
+                                        if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                                            selectedDivision = null
+                                        } else {
+                                            selectedBranch = null
+                                        }
                                     }
-                                    OpdDrillLevel.DIVISION -> {
-                                        level = OpdDrillLevel.BRANCH
-                                        selectedBranch = null
+                                    UniversalDrillLevel.LEVEL_2 -> {
+                                        level = UniversalDrillLevel.LEVEL_1
+                                        if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                                            selectedBranch = null
+                                        } else {
+                                            selectedDivision = null
+                                        }
                                     }
-                                    OpdDrillLevel.BRANCH -> {}
+                                    UniversalDrillLevel.LEVEL_1 -> {}
                                 }
                             }
                             .padding(end = 8.dp, top = 2.dp, bottom = 2.dp)
                     )
                 }
+
                 Row(
                     Modifier
                         .weight(1f)
@@ -852,51 +902,92 @@ private fun OpdBranchDrillDownCard(
                         "📅 ${info.xLabel}",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (level == OpdDrillLevel.BRANCH) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                        color = if (level == UniversalDrillLevel.LEVEL_1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
-                            level = OpdDrillLevel.BRANCH
+                            level = UniversalDrillLevel.LEVEL_1
                             selectedBranch = null
                             selectedDivision = null
                             selectedDepartment = null
                         }
                     )
-                    if (selectedBranch != null) {
-                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
-                        Text(
-                            selectedBranch!!,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (level == OpdDrillLevel.DIVISION) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                level = OpdDrillLevel.DIVISION
-                                selectedDivision = null
-                                selectedDepartment = null
-                            }
-                        )
-                    }
-                    if (selectedDivision != null) {
-                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
-                        Text(
-                            selectedDivision!!,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (level == OpdDrillLevel.DEPARTMENT) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable {
-                                level = OpdDrillLevel.DEPARTMENT
-                                selectedDepartment = null
-                            }
-                        )
-                    }
-                    if (selectedDepartment != null) {
-                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
-                        Text(
-                            selectedDepartment!!,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                    if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                        if (selectedBranch != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedBranch!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (level == UniversalDrillLevel.LEVEL_2) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    level = UniversalDrillLevel.LEVEL_2
+                                    selectedDivision = null
+                                    selectedDepartment = null
+                                }
+                            )
+                        }
+                        if (selectedDivision != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedDivision!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (level == UniversalDrillLevel.LEVEL_3) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    level = UniversalDrillLevel.LEVEL_3
+                                    selectedDepartment = null
+                                }
+                            )
+                        }
+                        if (selectedDepartment != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedDepartment!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    } else {
+                        // DIVISION_FIRST
+                        if (selectedDivision != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedDivision!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (level == UniversalDrillLevel.LEVEL_2) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    level = UniversalDrillLevel.LEVEL_2
+                                    selectedBranch = null
+                                    selectedDepartment = null
+                                }
+                            )
+                        }
+                        if (selectedBranch != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedBranch!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (level == UniversalDrillLevel.LEVEL_3) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    level = UniversalDrillLevel.LEVEL_3
+                                    selectedDepartment = null
+                                }
+                            )
+                        }
+                        if (selectedDepartment != null) {
+                            Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                selectedDepartment!!,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
+
                 Text(
                     "✕",
                     style = MaterialTheme.typography.labelLarge,
@@ -910,10 +1001,19 @@ private fun OpdBranchDrillDownCard(
 
             // 層級提示列
             val levelHint = when (level) {
-                OpdDrillLevel.BRANCH -> "💡 院區詳細資訊（點擊院區展開部別）"
-                OpdDrillLevel.DIVISION -> "💡 部別詳細資訊（點擊部別展開科別）"
-                OpdDrillLevel.DEPARTMENT -> "💡 科別詳細資訊（點擊科別展開醫師別）"
-                OpdDrillLevel.DOCTOR -> "💡 醫師別詳細資訊"
+                UniversalDrillLevel.LEVEL_1 -> {
+                    if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) "💡 院區詳細資訊（點擊院區展開部別）"
+                    else "💡 部別詳細資訊（點擊部別展開院區）"
+                }
+                UniversalDrillLevel.LEVEL_2 -> {
+                    if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) "💡 部別詳細資訊（點擊部別展開科別）"
+                    else "💡 院區詳細資訊（點擊院區展開科別）"
+                }
+                UniversalDrillLevel.LEVEL_3 -> {
+                    if (config.maxLevels == 4) "💡 科別詳細資訊（點擊科別展開醫師別）"
+                    else "💡 科別詳細資訊"
+                }
+                UniversalDrillLevel.LEVEL_4 -> "💡 醫師別詳細資訊"
             }
             Text(
                 levelHint,
@@ -931,95 +1031,100 @@ private fun OpdBranchDrillDownCard(
                     .verticalScroll(rememberScrollState())
             ) {
                 when (level) {
-                    OpdDrillLevel.BRANCH -> {
-                        val branchItems = remember(info.items) { info.items.filter { it.value > 0.0 } }
-                        if (branchItems.isEmpty()) {
+                    UniversalDrillLevel.LEVEL_1 -> {
+                        val level1Items = remember(info.items) { info.items.filter { it.value > 0.0 } }
+                        if (level1Items.isEmpty()) {
                             Text(
-                                "此月份無門診人次大於 0 之院區資料",
+                                "此月份無${config.unit}大於 0 之資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
-                            branchItems.forEachIndexed { i, item ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                                    .clickable {
-                                        selectedBranch = item.seriesName
-                                        level = OpdDrillLevel.DIVISION
-                                    },
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            Modifier
-                                                .size(10.dp)
-                                                .clip(RoundedCornerShape(2.dp))
-                                                .background(seriesColor(item.seriesName, i))
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            item.seriesName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Text(
-                                            "${yFormatter(item.value)} 人次",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        if (item.prior != null) {
-                                            Text(
-                                                "去年 ${yFormatter(item.prior)}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline
+                            level1Items.forEachIndexed { i, item ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable {
+                                            if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                                                selectedBranch = item.seriesName
+                                            } else {
+                                                selectedDivision = item.seriesName
+                                            }
+                                            level = UniversalDrillLevel.LEVEL_2
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                Modifier
+                                                    .size(10.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(seriesColor(item.seriesName, i))
                                             )
                                             Spacer(Modifier.width(8.dp))
-                                        }
-                                        if (item.deltaPct != null) {
-                                            val up = item.deltaPct >= 0
                                             Text(
-                                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
-                                                style = MaterialTheme.typography.labelSmall,
+                                                item.seriesName,
+                                                style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                        }
-                                        Text(
-                                            "›",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    if (item.recent3.any { it != null }) {
-                                        Row(
-                                            Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                "近三個月 " + item.recent3.joinToString(" → ") { v ->
-                                                    if (v != null) yFormatter(v) else "—"
-                                                },
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.outline,
                                                 modifier = Modifier.weight(1f)
                                             )
-                                            if (item.recentDeltaPct != null) {
-                                                val up = item.recentDeltaPct >= 0
+                                            Text(
+                                                "${yFormatter(item.value)} ${config.unit}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            if (item.prior != null) {
                                                 Text(
-                                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                    "去年 ${yFormatter(item.prior)}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                            }
+                                            if (item.deltaPct != null) {
+                                                val up = item.deltaPct >= 0
+                                                Text(
+                                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = FontWeight.Bold,
                                                     color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
                                                 )
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(
+                                                "›",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        if (item.recent3.any { it != null }) {
+                                            Row(
+                                                Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    "近三個月 " + item.recent3.joinToString(" → ") { v ->
+                                                        if (v != null) yFormatter(v) else "—"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.outline,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                if (item.recentDeltaPct != null) {
+                                                    val up = item.recentDeltaPct >= 0
+                                                    Text(
+                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1027,38 +1132,52 @@ private fun OpdBranchDrillDownCard(
                             }
                         }
                     }
-                }
 
-                OpdDrillLevel.DIVISION -> {
+                    UniversalDrillLevel.LEVEL_2 -> {
                         val branch = selectedBranch ?: ""
-                        val divStats by produceState<List<DashboardRepo.OpdDivStat>?>(initialValue = null, branch, parsedYm) {
+                        val div = selectedDivision ?: ""
+                        val targetLevel = if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) "DIVISION" else "BRANCH"
+                        val l2Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config) {
                             value = withContext(Dispatchers.IO) {
                                 val y = parsedYm.first
                                 val m = parsedYm.second
-                                vm.repo.opdBranchDivStats(branch, y, m, showYoy = true)
+                                vm.repo.universalDrillStats(
+                                    metricType = config.metricType,
+                                    targetLevel = targetLevel,
+                                    branch = branch,
+                                    deptDiv = div,
+                                    dept = null,
+                                    year = y,
+                                    month = m,
+                                    showYoy = true
+                                )
                             }
                         }
-                        val activeDivs = remember(divStats) { divStats?.filter { it.opdVisit > 0.0 } }
-                        if (activeDivs == null) {
+                        val activeItems = remember(l2Stats) { l2Stats?.filter { it.value > 0.0 } }
+                        if (activeItems == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
-                        } else if (activeDivs.isEmpty()) {
+                        } else if (activeItems.isEmpty()) {
                             Text(
-                                "查無此院區門診人次大於 0 之部別資料",
+                                "查無此維度${config.unit}大於 0 之明細資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
-                            activeDivs.forEach { stat ->
+                            activeItems.forEach { stat ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 3.dp)
                                         .clickable {
-                                            selectedDivision = stat.deptDiv
-                                            level = OpdDrillLevel.DEPARTMENT
+                                            if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                                                selectedDivision = stat.name
+                                            } else {
+                                                selectedBranch = stat.name
+                                            }
+                                            level = UniversalDrillLevel.LEVEL_3
                                         },
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
                                     shape = RoundedCornerShape(6.dp)
@@ -1070,18 +1189,22 @@ private fun OpdBranchDrillDownCard(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(Modifier.weight(1f)) {
-                                            Text(stat.deptDiv, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    if (stat.avgPerUnit != null) {
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    }
+                                                }
                                             }
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.opdPrior != null) {
-                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                if (stat.prior != null) {
+                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                                     Spacer(Modifier.width(6.dp))
                                                 }
                                                 val delta = stat.deltaPct
@@ -1109,24 +1232,33 @@ private fun OpdBranchDrillDownCard(
                         }
                     }
 
-                    OpdDrillLevel.DEPARTMENT -> {
+                    UniversalDrillLevel.LEVEL_3 -> {
                         val branch = selectedBranch ?: ""
                         val div = selectedDivision ?: ""
-                        val deptStats by produceState<List<DashboardRepo.OpdDeptStat>?>(initialValue = null, branch, div, parsedYm) {
+                        val l3Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config) {
                             value = withContext(Dispatchers.IO) {
                                 val y = parsedYm.first
                                 val m = parsedYm.second
-                                vm.repo.opdBranchDivDeptStats(branch, div, y, m, showYoy = true)
+                                vm.repo.universalDrillStats(
+                                    metricType = config.metricType,
+                                    targetLevel = "DEPARTMENT",
+                                    branch = branch,
+                                    deptDiv = div,
+                                    dept = null,
+                                    year = y,
+                                    month = m,
+                                    showYoy = true
+                                )
                             }
                         }
-                        val activeDepts = remember(deptStats) { deptStats?.filter { it.opdVisit > 0.0 } }
+                        val activeDepts = remember(l3Stats) { l3Stats?.filter { it.value > 0.0 } }
                         if (activeDepts == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
                         } else if (activeDepts.isEmpty()) {
                             Text(
-                                "查無此部別門診人次大於 0 之科別資料",
+                                "查無此部別${config.unit}大於 0 之科別資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
@@ -1137,9 +1269,13 @@ private fun OpdBranchDrillDownCard(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 3.dp)
-                                        .clickable {
-                                            selectedDepartment = stat.dept
-                                            level = OpdDrillLevel.DOCTOR
+                                        .let { m ->
+                                            if (config.maxLevels == 4) {
+                                                m.clickable {
+                                                    selectedDepartment = stat.name
+                                                    level = UniversalDrillLevel.LEVEL_4
+                                                }
+                                            } else m
                                         },
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
                                     shape = RoundedCornerShape(6.dp)
@@ -1151,18 +1287,22 @@ private fun OpdBranchDrillDownCard(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(Modifier.weight(1f)) {
-                                            Text(stat.dept, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    if (stat.avgPerUnit != null) {
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    }
+                                                }
                                             }
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.opdPrior != null) {
-                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                if (stat.prior != null) {
+                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                                     Spacer(Modifier.width(6.dp))
                                                 }
                                                 val delta = stat.deltaPct
@@ -1177,45 +1317,56 @@ private fun OpdBranchDrillDownCard(
                                                 }
                                             }
                                         }
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            "›",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        if (config.maxLevels == 4) {
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                "›",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
 
-                    OpdDrillLevel.DOCTOR -> {
+                    UniversalDrillLevel.LEVEL_4 -> {
                         val branch = selectedBranch ?: ""
                         val div = selectedDivision ?: ""
                         val dept = selectedDepartment ?: ""
-                        val docStats by produceState<List<DashboardRepo.OpdDoctorStat>?>(initialValue = null, branch, div, dept, parsedYm) {
+                        val docStats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, dept, parsedYm, config) {
                             value = withContext(Dispatchers.IO) {
                                 val y = parsedYm.first
                                 val m = parsedYm.second
-                                vm.repo.opdDoctorStats(branch, div, dept, y, m, showYoy = true)
+                                vm.repo.universalDrillStats(
+                                    metricType = config.metricType,
+                                    targetLevel = "DOCTOR",
+                                    branch = branch,
+                                    deptDiv = div,
+                                    dept = dept,
+                                    year = y,
+                                    month = m,
+                                    showYoy = true
+                                )
                             }
                         }
-                        val activeDocs = remember(docStats) { docStats?.filter { it.opdVisit > 0.0 } }
+                        val activeDocs = remember(docStats) { docStats?.filter { it.value > 0.0 } }
                         if (activeDocs == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
                         } else if (activeDocs.isEmpty()) {
                             Text(
-                                "此科別暫無門診人次大於 0 之醫師明細資料",
+                                "此科別暫無${config.unit}大於 0 之醫師明細資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
                             Text(
-                                "👨‍⚕️ 共 ${activeDocs.size} 位醫師（排除人次為 0）",
+                                "👨‍⚕️ 共 ${activeDocs.size} 位醫師（排除數值為 0）",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -1236,27 +1387,31 @@ private fun OpdBranchDrillDownCard(
                                     ) {
                                         Column(Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(stat.doctorName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                                if (stat.doctorId.isNotEmpty()) {
+                                                Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                                if (!stat.extraId.isNullOrEmpty()) {
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("(${stat.doctorId})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    Text("(${stat.extraId})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                                 }
-                                                if ((branch == "全院" || branch == "全部") && stat.branch.isNotEmpty()) {
+                                                if (!stat.tag.isNullOrEmpty()) {
                                                     Spacer(Modifier.width(6.dp))
-                                                    Text(stat.branch, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                                    Text(stat.tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                                 }
                                             }
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                Spacer(Modifier.width(8.dp))
-                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    if (stat.avgPerUnit != null) {
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    }
+                                                }
                                             }
                                         }
                                         Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.opdPrior != null) {
-                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                if (stat.prior != null) {
+                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                                     Spacer(Modifier.width(6.dp))
                                                 }
                                                 val delta = stat.deltaPct

@@ -415,7 +415,9 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     var majorsInit by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(allMajors) {
         if (!majorsInit && allMajors.isNotEmpty()) {
-            majors = allMajors.take(3)
+            val defaultOrder = listOf("ICU", "一般", "特殊")
+            val chosen = defaultOrder.filter { it in allMajors }
+            majors = if (chosen.isNotEmpty()) chosen else allMajors.take(3)
             majorsInit = true
         }
     }

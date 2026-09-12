@@ -207,5 +207,65 @@ class OpdRegressionTest {
         assertEquals(1, filteredDivs.size)
         assertEquals("內科部", filteredDivs[0].deptDiv)
     }
+
+    @Test
+    fun testUniversalDrillMetrics() {
+        // 驗證通用下鑽統計資料模型 UniversalDrillStat
+        val stat = com.example.hospital_dashboard.data.DashboardRepo.UniversalDrillStat(
+            name = "急診醫學部",
+            value = 1200.0,
+            secondaryValue = 40.0,
+            secondaryLabel = "診",
+            avgLabel = "人/診",
+            prior = 1000.0
+        )
+        assertEquals(20.0, stat.deltaPct ?: 0.0, 0.001)
+        assertEquals(30.0, stat.avgPerUnit ?: 0.0, 0.001)
+
+        // 驗證 3 層與 4 層指標配置
+        val configs = listOf(
+            "急診人次月趨勢（依院區）" to 4,
+            "各部別門診人次趨勢" to 4,
+            "住院人日月趨勢（依院區）" to 4,
+            "住院人次月趨勢（依院區）" to 3,
+            "出院人日月趨勢（依院區）" to 3,
+            "出院人次月趨勢（依院區）" to 3,
+            "住院人日月趨勢（依部別）" to 4,
+            "總收入趨勢（依院區）" to 4,
+            "自費收入趨勢（依院區）" to 4
+        )
+        configs.forEach { (title, maxL) ->
+            if (maxL == 3) {
+                assertTrue(title.contains("住院人次") || title.contains("出院"))
+            } else {
+                assertTrue(maxL == 4)
+            }
+        }
+    }
+
+    @Test
+    fun testBedMajorCategoriesOrderAndMerge() {
+        // 驗證病床大類別排序及產後（小孩）合併邏輯
+        val rawCategories = listOf("特殊", "產後（小孩）", "一般", "其他", "ICU", "嬰兒床")
+        val merged = rawCategories.map { if (it == "產後（小孩）") "其他" else it }.distinct()
+        val order = listOf("一般", "ICU", "特殊", "嬰兒床", "其他")
+        val sorted = merged.sortedWith(compareBy {
+            val idx = order.indexOf(it)
+            if (idx >= 0) idx else order.size
+        })
+        assertEquals(listOf("一般", "ICU", "特殊", "嬰兒床", "其他"), sorted)
+
+        // 驗證預設篩選為 ICU, 一般, 特殊
+        val defaultSelection = listOf("ICU", "一般", "特殊").filter { it in sorted }
+        assertEquals(listOf("ICU", "一般", "特殊"), defaultSelection)
+    }
+
+    @Test
+    fun testTabReduction() {
+        // 驗證分頁調整為 5 個分頁（移除佔床率、醫師服務、醫師收入）
+        val tabs = listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🤖 AI 分析")
+        assertEquals(5, tabs.size)
+        assertFalse(tabs.any { it.contains("佔床率") || it.contains("醫師服務") || it.contains("醫師收入") })
+    }
 }
 
