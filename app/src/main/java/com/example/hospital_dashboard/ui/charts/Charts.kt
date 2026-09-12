@@ -386,75 +386,118 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                     }
                 }
                 is ChartContent.HBar -> {
-                    var selectedRow by remember(content) { mutableStateOf<String?>(null) }
+                    val drillConfig = getDrillMetricConfig(content.title)
+                    var selectedRow by remember(content) {
+                        mutableStateOf(if (content.data.rows.size == 1 && drillConfig != null) content.data.rows.first().name else null)
+                    }
+                    val isInteractive = content.clickAction != HBarClick.None || drillConfig != null
                     ZoomableBox {
                         HBarChart(
                             content.data,
                             height = chartHeight.coerceAtLeast(160.dp),
                             autoHeight = false,
                             valueFormatter = content.valueFormatter,
-                            interactive = content.clickAction != HBarClick.None,
+                            interactive = isInteractive,
                             onRowSelected = { idx ->
                                 val name = content.data.rows.getOrNull(idx)?.name
-                                if (name != null && content.clickAction != HBarClick.None) {
+                                if (name != null) {
                                     selectedRow = name
                                 }
                             }
                         )
                     }
-                    when (content.clickAction) {
-                        HBarClick.DeptBranch -> selectedRow?.let { dept ->
-                            DeptOpdCard(
-                                vm, dept,
+                    if (drillConfig != null) {
+                        val parsedYm = remember(content.title, vm.filters.value) {
+                            parseYmFromTitleOrFilters(content.title, vm.filters.value)
+                        }
+                        val xLabel = remember(parsedYm) {
+                            "${parsedYm.first}年${parsedYm.second.toString().padStart(2, '0')}月"
+                        }
+                        val hbarPointInfo = remember(content.data, xLabel) {
+                            val items = content.data.rows.map { row ->
+                                val curVal = row.segments.firstOrNull()?.value ?: 0.0
+                                val priorVal = if (row.segments.size > 1) row.segments[1].value else null
+                                val deltaPct = if (priorVal != null && priorVal > 0) (curVal - priorVal) / priorVal * 100.0 else null
+                                PointItem(
+                                    seriesName = row.name,
+                                    value = curVal,
+                                    prior = priorVal,
+                                    deltaPct = deltaPct
+                                )
+                            }
+                            PointInfo(xLabel = xLabel, items = items)
+                        }
+                        selectedRow?.let { rowName ->
+                            val initialLevel = UniversalDrillLevel.LEVEL_2
+                            val initialBranch = if (drillConfig.hierarchy == DrillHierarchyType.BRANCH_FIRST) rowName else null
+                            val initialDivision = if (drillConfig.hierarchy == DrillHierarchyType.DIVISION_FIRST) rowName else null
+                            UniversalDrillDownCard(
+                                vm = vm,
+                                info = hbarPointInfo,
+                                config = drillConfig,
+                                yFormatter = drillConfig.yFormatter ?: content.valueFormatter,
+                                initialLevel = initialLevel,
+                                initialBranch = initialBranch,
+                                initialDivision = initialDivision,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 onDismiss = { selectedRow = null }
                             )
                         }
-                        HBarClick.BranchDept -> selectedRow?.let { branch ->
-                            BranchDeptCard(
-                                vm, branch,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { selectedRow = null }
-                            )
-                        }
-                        HBarClick.DivDept -> selectedRow?.let { div ->
-                            DivDeptCard(
-                                vm, div,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { selectedRow = null }
-                            )
-                        }
-                        HBarClick.IpdDivDept -> selectedRow?.let { div ->
-                            IpdDivDeptCard(
-                                vm, div,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { selectedRow = null }
-                            )
-                        }
-                        HBarClick.OffsiteBranch -> selectedRow?.let { branch ->
-                            OffsiteBranchCard(
-                                vm, branch,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { selectedRow = null }
-                            )
-                        }
-                        HBarClick.BedBranch -> selectedRow?.let { branch ->
-                            BedBranchCard(
-                                vm, branch,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { selectedRow = null }
-                            )
-                        }
-                        HBarClick.BranchIncome -> selectedRow?.let { branch ->
-                            content.branchMetricDef?.let { def ->
-                                MetricOverlayCard(
-                                    vm, def, null, branch,
+                    } else {
+                        when (content.clickAction) {
+                            HBarClick.DeptBranch -> selectedRow?.let { dept ->
+                                DeptOpdCard(
+                                    vm, dept,
                                     modifier = Modifier.align(Alignment.BottomCenter),
                                     onDismiss = { selectedRow = null }
                                 )
                             }
+                            HBarClick.BranchDept -> selectedRow?.let { branch ->
+                                BranchDeptCard(
+                                    vm, branch,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                            HBarClick.DivDept -> selectedRow?.let { div ->
+                                DivDeptCard(
+                                    vm, div,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                            HBarClick.IpdDivDept -> selectedRow?.let { div ->
+                                IpdDivDeptCard(
+                                    vm, div,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                            HBarClick.OffsiteBranch -> selectedRow?.let { branch ->
+                                OffsiteBranchCard(
+                                    vm, branch,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                            HBarClick.BedBranch -> selectedRow?.let { branch ->
+                                BedBranchCard(
+                                    vm, branch,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { selectedRow = null }
+                                )
+                            }
+                            HBarClick.BranchIncome -> selectedRow?.let { branch ->
+                                content.branchMetricDef?.let { def ->
+                                    MetricOverlayCard(
+                                        vm, def, null, branch,
+                                        modifier = Modifier.align(Alignment.BottomCenter),
+                                        onDismiss = { selectedRow = null }
+                                    )
+                                }
+                            }
+                            HBarClick.None -> {}
                         }
-                        HBarClick.None -> {}
                     }
                 }
                 is ChartContent.VBar -> {
@@ -776,39 +819,62 @@ private fun LineTooltipCard(
  * 第 3 層：該院區該部別各科別詳細資訊 (Department)
  * 第 4 層：該院區該部別該科別各醫師服務量詳細資訊 (Doctor)
  */
-private enum class DrillHierarchyType {
+internal enum class DrillHierarchyType {
     BRANCH_FIRST,   // 院區 -> 部別 -> 科別 [-> 醫師別]
     DIVISION_FIRST  // 部別 -> 院區 -> 科別 -> 醫師別
 }
 
-private enum class UniversalDrillLevel {
+internal enum class UniversalDrillLevel {
     LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4
 }
 
-private data class DrillMetricConfig(
+internal data class DrillMetricConfig(
     val titleMatch: String,
     val metricType: String,
     val unit: String,
     val hierarchy: DrillHierarchyType = DrillHierarchyType.BRANCH_FIRST,
     val maxLevels: Int = 4,
-    val yFormatter: ((Double) -> String)? = null
+    val yFormatter: ((Double) -> String)? = null,
+    val aliases: List<String> = emptyList()
 )
 
 private val DRILL_CONFIGS = listOf(
-    DrillMetricConfig("門診人次月趨勢（依院區）", "OPD", "人次", DrillHierarchyType.BRANCH_FIRST, 4),
-    DrillMetricConfig("急診人次月趨勢（依院區）", "ER", "人次", DrillHierarchyType.BRANCH_FIRST, 4),
-    DrillMetricConfig("各部別門診人次趨勢", "OPD", "人次", DrillHierarchyType.DIVISION_FIRST, 4),
-    DrillMetricConfig("住院人日月趨勢（依院區）", "IPD_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 4),
-    DrillMetricConfig("住院人次月趨勢（依院區）", "IPD_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3),
-    DrillMetricConfig("出院人日月趨勢（依院區）", "DIS_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 3),
-    DrillMetricConfig("出院人次月趨勢（依院區）", "DIS_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3),
-    DrillMetricConfig("住院人日月趨勢（依部別）", "IPD_DAYS", "人日", DrillHierarchyType.DIVISION_FIRST, 4),
-    DrillMetricConfig("總收入趨勢（依院區）", "INC_TOTAL", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money),
-    DrillMetricConfig("自費收入趨勢（依院區）", "INC_SELF", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money)
+    // DIVISION_FIRST 優先比對，避免「各部別」被「門診人次」或「住院人日」誤判為 BRANCH_FIRST
+    DrillMetricConfig("各部別門診人次趨勢", "OPD", "人次", DrillHierarchyType.DIVISION_FIRST, 4, aliases = listOf("各部別門診人次")),
+    DrillMetricConfig("住院人日月趨勢（依部別）", "IPD_DAYS", "人日", DrillHierarchyType.DIVISION_FIRST, 4, aliases = listOf("各部別住院人日")),
+    DrillMetricConfig("門診人次月趨勢（依院區）", "OPD", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區門診人次", "門診人次")),
+    DrillMetricConfig("急診人次月趨勢（依院區）", "ER", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區急診人次", "急診人次")),
+    DrillMetricConfig("住院人日月趨勢（依院區）", "IPD_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區住院人日", "住院人日")),
+    DrillMetricConfig("住院人次月趨勢（依院區）", "IPD_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區住院人次", "住院人次")),
+    DrillMetricConfig("出院人日月趨勢（依院區）", "DIS_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區出院人日", "出院人日")),
+    DrillMetricConfig("出院人次月趨勢（依院區）", "DIS_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區出院人次", "出院人次")),
+    DrillMetricConfig("總收入趨勢（依院區）", "INC_TOTAL", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money, aliases = listOf("各院區總收入", "總收入")),
+    DrillMetricConfig("自費收入趨勢（依院區）", "INC_SELF", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money, aliases = listOf("各院區自費收入", "自費收入"))
 )
 
-private fun getDrillMetricConfig(title: String): DrillMetricConfig? =
-    DRILL_CONFIGS.firstOrNull { title == it.titleMatch || title.contains(it.titleMatch) }
+internal fun getDrillMetricConfig(title: String): DrillMetricConfig? {
+    if (title.contains("累計")) return null
+    // 優先精確比對 titleMatch
+    DRILL_CONFIGS.firstOrNull { title == it.titleMatch || title.contains(it.titleMatch) }?.let { return it }
+    // 依 aliases 比對（支援單月橫條圖等標題）
+    return DRILL_CONFIGS.firstOrNull { cfg ->
+        cfg.aliases.any { alias -> title.contains(alias) }
+    }
+}
+
+internal fun parseYmFromTitleOrFilters(title: String, filters: DashboardRepo.Filters): Pair<Int, Int> {
+    val ymRegex = Regex("""(\d+)年(\d+)月""").find(title)
+    if (ymRegex != null) {
+        val y = ymRegex.groupValues[1].toIntOrNull()
+        val mo = ymRegex.groupValues[2].toIntOrNull()
+        if (y != null && mo != null) return Pair(y, mo)
+    }
+    val moRegex = Regex("""(\d+)月""").find(title)
+    val yr = filters.years.maxOrNull()?.toIntOrNull() ?: filters.years.lastOrNull()?.toIntOrNull() ?: 115
+    val mo = moRegex?.groupValues?.get(1)?.toIntOrNull()
+        ?: filters.months.firstOrNull()?.toIntOrNull() ?: 8
+    return Pair(yr, mo)
+}
 
 /** 通用多維度下鑽詳細資訊卡片 */
 @Composable
@@ -817,13 +883,16 @@ private fun UniversalDrillDownCard(
     info: PointInfo,
     config: DrillMetricConfig,
     yFormatter: (Double) -> String,
+    initialLevel: UniversalDrillLevel = UniversalDrillLevel.LEVEL_1,
+    initialBranch: String? = null,
+    initialDivision: String? = null,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
 ) {
-    var level by remember(info, config) { mutableStateOf(UniversalDrillLevel.LEVEL_1) }
-    var selectedBranch by remember(info, config) { mutableStateOf<String?>(null) }
-    var selectedDivision by remember(info, config) { mutableStateOf<String?>(null) }
-    var selectedDepartment by remember(info, config) { mutableStateOf<String?>(null) }
+    var level by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialLevel) }
+    var selectedBranch by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialBranch) }
+    var selectedDivision by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialDivision) }
+    var selectedDepartment by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf<String?>(null) }
 
     val parsedYm: Pair<Int, Int> = remember(info.xLabel) {
         parseYmLabel(info.xLabel) ?: run {
@@ -834,8 +903,8 @@ private fun UniversalDrillDownCard(
                 if (y != null && mo != null) Pair(y, mo) else null
             } else null
         } ?: run {
-            val y = vm.filters.value.years.firstOrNull()?.toIntOrNull() ?: 113
-            val m = vm.filters.value.months.firstOrNull()?.toIntOrNull() ?: 1
+            val y = vm.filters.value.years.maxOrNull()?.toIntOrNull() ?: vm.filters.value.years.lastOrNull()?.toIntOrNull() ?: 115
+            val m = vm.filters.value.months.firstOrNull()?.toIntOrNull() ?: 8
             Pair(y, m)
         }
     }
@@ -2697,14 +2766,12 @@ internal fun hbarNameWidth(data: HBarData, density: Density): Float {
 
 private fun findRowIndex(data: HBarData, tap: Offset, size: IntSize, density: Density): Int? {
     if (size.width <= 0 || size.height <= 0 || data.rows.isEmpty()) return null
-    val nameW = hbarNameWidth(data, density)
-    val gap = with(density) { 6.dp.toPx() }
+    if (tap.x < 0 || tap.x > size.width || tap.y < 0 || tap.y > size.height) return null
+    if (data.rows.size == 1) return 0
     val scale = density.fontScale.coerceAtLeast(1f)
     val barH = (size.height / data.rows.size).toFloat().coerceAtMost(with(density) { (26 * scale).dp.toPx() })
     val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
-    if (tap.x < nameW + gap) return null
-    val idx = ((tap.y - topPad) / barH).toInt()
-    if (idx < 0 || idx >= data.rows.size) return null
+    val idx = ((tap.y - topPad) / barH).toInt().coerceIn(0, data.rows.size - 1)
     return idx
 }
 

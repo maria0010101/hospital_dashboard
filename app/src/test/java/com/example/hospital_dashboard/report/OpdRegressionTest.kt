@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -296,6 +297,63 @@ class OpdRegressionTest {
         assertEquals(150f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(3).value, 0.01f)
         assertEquals(185f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(4).value, 0.01f)
         assertEquals(240f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(7).value, 0.01f)
+    }
+
+    @Test
+    fun testSingleMonthHBarDrillDownMatching() {
+        // 驗證單月橫條圖標題能正確對應 3/4 層展開指標設定
+        val hbarTitles = listOf(
+            "各院區門診人次（8月）" to ("OPD" to 4),
+            "各院區急診人次（民國115年08月）" to ("ER" to 4),
+            "各部別門診人次（8月）" to ("OPD" to 4),
+            "各院區住院人日（8月）" to ("IPD_DAYS" to 4),
+            "各院區住院人次（8月）" to ("IPD_COUNT" to 3),
+            "各院區出院人日（8月）" to ("DIS_DAYS" to 3),
+            "各院區出院人次（8月）" to ("DIS_COUNT" to 3),
+            "各部別住院人日（8月）" to ("IPD_DAYS" to 4),
+            "各院區總收入（8月）" to ("INC_TOTAL" to 4),
+            "各院區自費收入（8月）" to ("INC_SELF" to 4),
+        )
+
+        for ((title, expected) in hbarTitles) {
+            val cfg = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig(title)
+            assertNotNull("標題 '$title' 必須能比對到下鑽設定", cfg)
+            assertEquals("指標類型需正確", expected.first, cfg!!.metricType)
+            assertEquals("展開層級需正確", expected.second, cfg.maxLevels)
+        }
+
+        // 部別開頭需為 DIVISION_FIRST
+        val divOpd = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各部別門診人次（8月）")!!
+        assertEquals(com.example.hospital_dashboard.ui.charts.DrillHierarchyType.DIVISION_FIRST, divOpd.hierarchy)
+        val divIpd = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各部別住院人日（8月）")!!
+        assertEquals(com.example.hospital_dashboard.ui.charts.DrillHierarchyType.DIVISION_FIRST, divIpd.hierarchy)
+
+        // 院區開頭需為 BRANCH_FIRST
+        val brOpd = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區門診人次（8月）")!!
+        assertEquals(com.example.hospital_dashboard.ui.charts.DrillHierarchyType.BRANCH_FIRST, brOpd.hierarchy)
+
+        // 負向測試：累計或非下鑽圖表不應匹配
+        assertNull(com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區總收入（累計，單位千元）"))
+        assertNull(com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區初診人次（8月）"))
+    }
+
+    @Test
+    fun testParseYmFromTitleOrFilters() {
+        val f = com.example.hospital_dashboard.data.DashboardRepo.Filters(
+            years = listOf("113", "114", "115"),
+            months = listOf("8")
+        )
+        // 從完整民國年月解析
+        val ym1 = com.example.hospital_dashboard.ui.charts.parseYmFromTitleOrFilters("各院區門診人次（民國115年08月）", f)
+        assertEquals(115 to 8, ym1)
+
+        // 從單月標題 + 篩選年度解析（多年度時應優先取最新年度 115）
+        val ym2 = com.example.hospital_dashboard.ui.charts.parseYmFromTitleOrFilters("各院區急診人次（8月）", f)
+        assertEquals(115 to 8, ym2)
+
+        // 無月份標題時由 filters 提供
+        val ym3 = com.example.hospital_dashboard.ui.charts.parseYmFromTitleOrFilters("門診人次月趨勢（依院區）", f)
+        assertEquals(115 to 8, ym3)
     }
 }
 

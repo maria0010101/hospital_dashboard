@@ -920,6 +920,7 @@ fun OtherTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
                 title = "各院區總收入$monthSuffix",
                 data = brIncTotalBar,
                 height = 240.dp,
+                clickAction = HBarClick.BranchDept,
                 fmt = Fmt::money
             )
         } else {
@@ -933,6 +934,7 @@ fun OtherTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
                 title = "各院區自費收入$monthSuffix",
                 data = brIncSelfBar,
                 height = 240.dp,
+                clickAction = HBarClick.BranchDept,
                 fmt = Fmt::money
             )
         } else {
