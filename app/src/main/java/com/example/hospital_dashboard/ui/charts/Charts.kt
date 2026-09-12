@@ -932,7 +932,16 @@ private fun OpdBranchDrillDownCard(
             ) {
                 when (level) {
                     OpdDrillLevel.BRANCH -> {
-                        info.items.forEachIndexed { i, item ->
+                        val branchItems = remember(info.items) { info.items.filter { it.value > 0.0 } }
+                        if (branchItems.isEmpty()) {
+                            Text(
+                                "此月份無門診人次大於 0 之院區資料",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        } else {
+                            branchItems.forEachIndexed { i, item ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1018,8 +1027,9 @@ private fun OpdBranchDrillDownCard(
                             }
                         }
                     }
+                }
 
-                    OpdDrillLevel.DIVISION -> {
+                OpdDrillLevel.DIVISION -> {
                         val branch = selectedBranch ?: ""
                         val divStats by produceState<List<DashboardRepo.OpdDivStat>?>(initialValue = null, branch, parsedYm) {
                             value = withContext(Dispatchers.IO) {
@@ -1028,19 +1038,20 @@ private fun OpdBranchDrillDownCard(
                                 vm.repo.opdBranchDivStats(branch, y, m, showYoy = true)
                             }
                         }
-                        if (divStats == null) {
+                        val activeDivs = remember(divStats) { divStats?.filter { it.opdVisit > 0.0 } }
+                        if (activeDivs == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
-                        } else if (divStats!!.isEmpty()) {
+                        } else if (activeDivs.isEmpty()) {
                             Text(
-                                "查無此院區之部別門診資料",
+                                "查無此院區門診人次大於 0 之部別資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
-                            divStats!!.forEach { stat ->
+                            activeDivs.forEach { stat ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1108,19 +1119,20 @@ private fun OpdBranchDrillDownCard(
                                 vm.repo.opdBranchDivDeptStats(branch, div, y, m, showYoy = true)
                             }
                         }
-                        if (deptStats == null) {
+                        val activeDepts = remember(deptStats) { deptStats?.filter { it.opdVisit > 0.0 } }
+                        if (activeDepts == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
-                        } else if (deptStats!!.isEmpty()) {
+                        } else if (activeDepts.isEmpty()) {
                             Text(
-                                "查無此部別之科別門診資料",
+                                "查無此部別門診人次大於 0 之科別資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
-                            deptStats!!.forEach { stat ->
+                            activeDepts.forEach { stat ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1189,25 +1201,26 @@ private fun OpdBranchDrillDownCard(
                                 vm.repo.opdDoctorStats(branch, div, dept, y, m, showYoy = true)
                             }
                         }
-                        if (docStats == null) {
+                        val activeDocs = remember(docStats) { docStats?.filter { it.opdVisit > 0.0 } }
+                        if (activeDocs == null) {
                             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(Modifier.size(24.dp))
                             }
-                        } else if (docStats!!.isEmpty()) {
+                        } else if (activeDocs.isEmpty()) {
                             Text(
-                                "此科別暫無醫師服務量明細資料",
+                                "此科別暫無門診人次大於 0 之醫師明細資料",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(16.dp)
                             )
                         } else {
                             Text(
-                                "👨‍⚕️ 共 ${docStats!!.size} 位醫師",
+                                "👨‍⚕️ 共 ${activeDocs.size} 位醫師（排除人次為 0）",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
-                            docStats!!.forEach { stat ->
+                            activeDocs.forEach { stat ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()

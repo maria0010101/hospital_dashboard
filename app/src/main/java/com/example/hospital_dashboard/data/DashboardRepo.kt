@@ -898,6 +898,7 @@ class DashboardRepo(private val db: HospitalDb) {
         return curRows.mapNotNull { r ->
             val div = r[0]?.toString() ?: return@mapNotNull null
             val opd = num(r[1]) ?: 0.0
+            if (opd <= 0.0) return@mapNotNull null
             val sess = num(r[2]) ?: 0.0
             OpdDivStat(
                 deptDiv = div,
@@ -948,6 +949,7 @@ class DashboardRepo(private val db: HospitalDb) {
         return curRows.mapNotNull { r ->
             val dept = r[0]?.toString() ?: return@mapNotNull null
             val opd = num(r[1]) ?: 0.0
+            if (opd <= 0.0) return@mapNotNull null
             val sess = num(r[2]) ?: 0.0
             OpdDeptStat(
                 dept = dept,
@@ -1009,6 +1011,7 @@ class DashboardRepo(private val db: HospitalDb) {
                 val id = r[1]?.toString() ?: ""
                 val name = r[2]?.toString() ?: return@mapNotNull null
                 val opd = num(r[3]) ?: 0.0
+                if (opd <= 0.0) return@mapNotNull null
                 val sess = num(r[4]) ?: 0.0
                 val key = "$b-$id-$name"
                 OpdDoctorStat(

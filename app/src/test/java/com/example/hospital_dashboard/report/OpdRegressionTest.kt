@@ -184,5 +184,28 @@ class OpdRegressionTest {
         assertEquals("科別詳細資訊", layers[2])
         assertEquals("醫師別詳細資訊", layers[3])
     }
+
+    @Test
+    fun testOpdZeroVisitExclusion() {
+        // 驗證門診人次為 0 之資料在各維度展開時正確被排除
+        val docs = listOf(
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat("仁愛", "D1", "王醫師", 150.0, 3.0),
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat("仁愛", "D2", "陳醫師", 0.0, 0.0),
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat("仁愛", "D3", "林醫師", 0.0, 2.0),
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat("仁愛", "D4", "張醫師", 80.0, 2.0)
+        )
+        val filteredDocs = docs.filter { it.opdVisit > 0.0 }
+        assertEquals(2, filteredDocs.size)
+        assertEquals(listOf("王醫師", "張醫師"), filteredDocs.map { it.doctorName })
+
+        // 驗證部別與科別同理過濾
+        val divs = listOf(
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDivStat("內科部", 500.0, 10.0),
+            com.example.hospital_dashboard.data.DashboardRepo.OpdDivStat("其他部", 0.0, 0.0)
+        )
+        val filteredDivs = divs.filter { it.opdVisit > 0.0 }
+        assertEquals(1, filteredDivs.size)
+        assertEquals("內科部", filteredDivs[0].deptDiv)
+    }
 }
 
