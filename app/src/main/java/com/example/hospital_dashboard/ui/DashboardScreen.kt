@@ -1,5 +1,6 @@
 package com.example.hospital_dashboard.ui
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -14,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,6 +32,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -37,6 +42,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -47,7 +53,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.hospital_dashboard.DashboardViewModel
+import kotlin.math.roundToInt
 import com.example.hospital_dashboard.UiState
 import com.example.hospital_dashboard.data.DashboardRepo
 import com.example.hospital_dashboard.data.Fmt
@@ -67,19 +75,26 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("🏥 醫院營運儀表板", fontWeight = FontWeight.Bold)
+                        Text(
+                            "🏥 醫院營運儀表板",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
+                        )
                         Text(
                             "📅 資料更新日期：${state.updateDate ?: "未知"}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
                         )
                     }
                 },
                 actions = {
                     TextButton(onClick = { showFilters = true }) {
-                        Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}")
+                        Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}", maxLines = 1)
                     }
-                    TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換") }
+                    TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換", maxLines = 1) }
                 }
             )
         }
@@ -160,10 +175,12 @@ private fun KpiRow(vm: DashboardViewModel) {
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).basicMarquee(),
+            maxLines = 1
         )
+        Spacer(Modifier.width(6.dp))
         Text("🔍 各院區明細", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary)
+            color = MaterialTheme.colorScheme.primary, maxLines = 1)
     }
 
     LazyRow(
@@ -286,20 +303,33 @@ private fun MetricLine(
 @Composable
 private fun KpiCard(d: KpiDef) {
     Card(
-        Modifier.width(116.dp),
+        Modifier.widthIn(min = 116.dp, max = 150.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(10.dp)) {
-            Text(d.title, style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(d.fmt(d.value), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Text(
+                d.title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.basicMarquee()
+            )
+            Text(
+                d.fmt(d.value),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.basicMarquee()
+            )
             if (d.delta != null) {
                 val up = d.delta >= 0
                 Text(
                     String.format("%+.1f%%", d.delta),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (up) androidx.compose.ui.graphics.Color(0xFF1E8449)
-                    else androidx.compose.ui.graphics.Color(0xFFC0392B)
+                    else androidx.compose.ui.graphics.Color(0xFFC0392B),
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
                 )
             } else {
                 Text("—", style = MaterialTheme.typography.labelSmall,
@@ -457,6 +487,71 @@ private fun FilterSheet(
                 Switch(checked = yoy, onCheckedChange = { yoy = it })
             }
 
+            SectionLabel("🔤 字型大小設定")
+            var fontLevel by remember { mutableIntStateOf(vm.fontScaleLevel.value) }
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("字型大小", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "${DashboardViewModel.FONT_SCALE_NAMES[fontLevel]} (${String.format("%.1fx", DashboardViewModel.FONT_SCALE_MULTIPLIERS[fontLevel])})",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("A", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
+                        Slider(
+                            value = fontLevel.toFloat(),
+                            onValueChange = {
+                                val newLevel = it.roundToInt().coerceIn(0, 4)
+                                fontLevel = newLevel
+                                vm.setFontScaleLevel(newLevel)
+                            },
+                            valueRange = 0f..4f,
+                            steps = 3,
+                            modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                        )
+                        Text("A", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        DashboardViewModel.FONT_SCALE_NAMES.forEachIndexed { idx, name ->
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (fontLevel == idx) FontWeight.Bold else FontWeight.Normal,
+                                color = if (fontLevel == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.clickable {
+                                    fontLevel = idx
+                                    vm.setFontScaleLevel(idx)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(12.dp))
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
@@ -469,12 +564,15 @@ private fun FilterSheet(
                         divsAll = true; divs = emptyList()
                         deptsAll = true; depts = emptyList()
                         showHospitalTotal = false
+                        fontLevel = 0
+                        vm.setFontScaleLevel(0)
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("重設") }
                 Button(
                     onClick = {
                         if (years.isEmpty()) return@Button // 需至少一個年度
+                        vm.setFontScaleLevel(fontLevel)
                         vm.filters.value = DashboardRepo.Filters(
                             years = years,
                             months = if (monthsAll) emptyList() else months,

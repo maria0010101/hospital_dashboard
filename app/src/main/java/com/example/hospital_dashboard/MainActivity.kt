@@ -12,6 +12,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.example.hospital_dashboard.ui.DashboardScreen
 import com.example.hospital_dashboard.ui.FilePickScreen
 import com.example.hospital_dashboard.ui.charts.ZoomChartScreen
@@ -24,19 +28,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             Hospital_dashboardTheme {
                 val vm: DashboardViewModel = viewModel()
-                val zoom by vm.zoomChart.collectAsState()
-                if (zoom != null) {
-                    ZoomChartScreen(vm, zoom!!, onClose = { vm.closeZoom() })
-                } else {
-                    when (val s = vm.uiState.collectAsState().value) {
-                        is UiState.Ready -> DashboardScreen(vm, s)
-                        is UiState.NoData,
-                        is UiState.Importing,
-                        is UiState.ImportError -> FilePickScreen(vm)
-                        UiState.Loading -> Box(
-                            Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) { CircularProgressIndicator() }
+                val fontScaleLevel by vm.fontScaleLevel.collectAsState()
+                val fontMultiplier = DashboardViewModel.FONT_SCALE_MULTIPLIERS.getOrElse(fontScaleLevel) { 1.0f }
+                val baseDensity = LocalDensity.current
+                val customDensity = remember(baseDensity, fontMultiplier) {
+                    Density(
+                        density = baseDensity.density,
+                        fontScale = baseDensity.fontScale * fontMultiplier
+                    )
+                }
+                CompositionLocalProvider(LocalDensity provides customDensity) {
+                    val zoom by vm.zoomChart.collectAsState()
+                    if (zoom != null) {
+                        ZoomChartScreen(vm, zoom!!, onClose = { vm.closeZoom() })
+                    } else {
+                        when (val s = vm.uiState.collectAsState().value) {
+                            is UiState.Ready -> DashboardScreen(vm, s)
+                            is UiState.NoData,
+                            is UiState.Importing,
+                            is UiState.ImportError -> FilePickScreen(vm)
+                            UiState.Loading -> Box(
+                                Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) { CircularProgressIndicator() }
+                        }
                     }
                 }
             }

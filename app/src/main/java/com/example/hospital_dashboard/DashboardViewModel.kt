@@ -57,6 +57,21 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeZoom() { _zoomChart.value = null }
 
+    /** 字型大小等級 (0..4)，0 為目前顯示（最小字體），橫向滑動共 5 級 */
+    private val prefs by lazy { getApplication<Application>().getSharedPreferences("dashboard_settings", Context.MODE_PRIVATE) }
+    val fontScaleLevel = MutableStateFlow(prefs.getInt("font_scale_level", 0).coerceIn(0, 4))
+
+    fun setFontScaleLevel(level: Int) {
+        val clamped = level.coerceIn(0, 4)
+        fontScaleLevel.value = clamped
+        prefs.edit().putInt("font_scale_level", clamped).apply()
+    }
+
+    companion object {
+        val FONT_SCALE_MULTIPLIERS = listOf(1.00f, 1.10f, 1.20f, 1.30f, 1.40f)
+        val FONT_SCALE_NAMES = listOf("最小 (目前)", "較小", "標準", "較大", "最大")
+    }
+
     init {
         com.example.hospital_dashboard.report.registry.ReportRegistry.initDefaultReports()
         refresh()

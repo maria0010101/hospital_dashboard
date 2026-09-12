@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -161,6 +162,22 @@ sealed class ChartContent {
 }
 
 // ── 圖表卡片外框(onClick 提供時可點擊放大) ─────────
+/** 計算折線圖高度：若為單一院區篩選，縮小高度至 140dp 避免大片空白 */
+fun dynamicLineHeight(isSingleBranch: Boolean, normalHeight: Dp = 220.dp): Dp =
+    if (isSingleBranch) 140.dp else normalHeight
+
+/** 計算橫條圖高度：依列數自動調整高度（1列約80dp，避免大片空白） */
+fun dynamicHBarHeight(rowCount: Int?, defaultHeight: Dp = 240.dp): Dp {
+    val count = rowCount ?: return defaultHeight
+    return when {
+        count <= 1 -> 80.dp
+        count == 2 -> 115.dp
+        count == 3 -> 150.dp
+        count <= 4 -> 185.dp
+        else -> defaultHeight
+    }
+}
+
 @Composable
 fun ChartCard(
     title: String,
@@ -176,11 +193,21 @@ fun ChartCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).basicMarquee(),
+                    maxLines = 1
+                )
                 if (onClick != null) {
-                    Text("🔍 點擊放大", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "🔍 點擊放大",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
+                    )
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -364,6 +391,7 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                         HBarChart(
                             content.data,
                             height = chartHeight.coerceAtLeast(160.dp),
+                            autoHeight = false,
                             valueFormatter = content.valueFormatter,
                             interactive = content.clickAction != HBarClick.None,
                             onRowSelected = { idx ->
@@ -2437,8 +2465,9 @@ private class LineGeo(
 }
 
 private fun computeLineGeo(size: Size, data: LineChartData, density: Density): LineGeo {
-    val labelW = with(density) { 46.dp.toPx() }
-    val bottomH = with(density) { 18.dp.toPx() }
+    val scale = density.fontScale.coerceAtLeast(1f)
+    val labelW = with(density) { (46 * scale).dp.toPx() }
+    val bottomH = with(density) { (18 * scale).dp.toPx() }
     val topPad = with(density) { 8.dp.toPx() }
     val chartW = size.width - labelW - with(density) { 4.dp.toPx() }
     val chartH = size.height - bottomH - topPad
@@ -2657,10 +2686,11 @@ fun LineChart(
 /** 依點擊位置找橫條圖的列索引。 */
 internal fun hbarNameWidth(data: HBarData, density: Density): Float {
     val maxNameLen = data.rows.maxOfOrNull { it.name.length } ?: 6
+    val scale = density.fontScale.coerceAtLeast(1f)
     val dpVal = when {
-        maxNameLen <= 3 -> 44.dp
-        maxNameLen <= 5 -> 60.dp
-        else -> 88.dp
+        maxNameLen <= 3 -> (44 * scale).dp
+        maxNameLen <= 5 -> (60 * scale).dp
+        else -> (88 * scale).dp
     }
     return with(density) { dpVal.toPx() }
 }
@@ -2669,7 +2699,8 @@ private fun findRowIndex(data: HBarData, tap: Offset, size: IntSize, density: De
     if (size.width <= 0 || size.height <= 0 || data.rows.isEmpty()) return null
     val nameW = hbarNameWidth(data, density)
     val gap = with(density) { 6.dp.toPx() }
-    val barH = (size.height / data.rows.size).toFloat().coerceAtMost(with(density) { 26.dp.toPx() })
+    val scale = density.fontScale.coerceAtLeast(1f)
+    val barH = (size.height / data.rows.size).toFloat().coerceAtMost(with(density) { (26 * scale).dp.toPx() })
     val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
     if (tap.x < nameW + gap) return null
     val idx = ((tap.y - topPad) / barH).toInt()
@@ -2681,11 +2712,15 @@ private fun findRowIndex(data: HBarData, tap: Offset, size: IntSize, density: De
 fun HBarChart(
     data: HBarData,
     height: Dp = 240.dp,
+    autoHeight: Boolean = true,
     valueFormatter: (Double) -> String = Fmt::compact,
     interactive: Boolean = false,
     onRowSelected: ((Int) -> Unit)? = null
 ) {
     if (data.rows.isEmpty()) { EmptyHint(); return }
+    val effectiveHeight = if (autoHeight) {
+        dynamicHBarHeight(data.rows.size, height).coerceAtMost(height)
+    } else height
     val segNames = data.rows.flatMap { it.segments.map { s -> s.label } }.distinct()
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val outlineColor = MaterialTheme.colorScheme.outline
@@ -2700,7 +2735,7 @@ fun HBarChart(
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(height)
+                .height(effectiveHeight)
                 .onSizeChanged { canvasSize = it }
                 .then(
                     if (interactive) Modifier.pointerInput(data, canvasSize) {
@@ -2714,7 +2749,8 @@ fun HBarChart(
         ) {
             val nameW = hbarNameWidth(data, density)
             val gap = 6.dp.toPx()
-            val barH = (size.height / data.rows.size).coerceAtMost(26.dp.toPx())
+            val scale = density.fontScale.coerceAtLeast(1f)
+            val barH = (size.height / data.rows.size).coerceAtMost(with(density) { (26 * scale).dp.toPx() })
             val topPad = ((size.height - barH * data.rows.size) / 2).coerceAtLeast(0f)
             val chartW = size.width - nameW - gap - 6.dp.toPx()
 

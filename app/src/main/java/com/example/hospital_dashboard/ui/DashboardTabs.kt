@@ -69,6 +69,10 @@ import com.example.hospital_dashboard.ui.charts.PieChart
 import com.example.hospital_dashboard.ui.charts.VBarClick
 import com.example.hospital_dashboard.ui.charts.VBarChart
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.runtime.collectAsState
+import com.example.hospital_dashboard.ui.charts.dynamicHBarHeight
+import com.example.hospital_dashboard.ui.charts.dynamicLineHeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -103,10 +107,14 @@ private fun LineCard(
     vm: DashboardViewModel, title: String, data: LineChartData?,
     height: Dp = 220.dp, fmt: (Double) -> String = Fmt::compact,
     monthDef: BranchMetricDef? = null,
-    clickAction: HBarClick = HBarClick.None
+    clickAction: HBarClick = HBarClick.None,
+    dynamicHeight: Boolean = true
 ) {
+    val filters by vm.filters.collectAsState()
+    val isSingleBranch = (filters.branches.size == 1 || filters.showHospitalTotal) && !title.contains("部別")
+    val effHeight = if (dynamicHeight && isSingleBranch) dynamicLineHeight(true, height) else height
     ChartCard(title, onClick = data?.let { { vm.openZoom(ChartContent.Line(title, it, fmt, monthDef, clickAction)) } }) {
-        data?.let { LineChart(it, height = height, yFormatter = fmt) } ?: LoadingBox()
+        data?.let { LineChart(it, height = effHeight, yFormatter = fmt) } ?: LoadingBox()
     }
 }
 
@@ -115,15 +123,24 @@ private fun HBarCard(
     vm: DashboardViewModel, title: String, data: HBarData?,
     height: Dp = 240.dp, fmt: (Double) -> String = Fmt::compact,
     clickAction: HBarClick = HBarClick.None,
-    branchMetricDef: BranchMetricDef? = null
+    branchMetricDef: BranchMetricDef? = null,
+    dynamicHeight: Boolean = true
 ) {
+    val filters by vm.filters.collectAsState()
+    val isSingleBranch = (filters.branches.size == 1 || filters.showHospitalTotal) && !title.contains("部別") && !title.contains("病床類別")
+    val effHeight = when {
+        !dynamicHeight -> height
+        data != null && data.rows.size <= 4 -> dynamicHBarHeight(data.rows.size, height)
+        isSingleBranch -> 80.dp
+        else -> height
+    }
     ChartCard(
         title,
         onClick = data?.let {
             { vm.openZoom(ChartContent.HBar(title, it, fmt, clickAction, branchMetricDef)) }
         }
     ) {
-        data?.let { HBarChart(it, height = height, valueFormatter = fmt) } ?: LoadingBox()
+        data?.let { HBarChart(it, height = effHeight, valueFormatter = fmt) } ?: LoadingBox()
     }
 }
 
@@ -268,17 +285,17 @@ private fun FirstVisitSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.weight(1f))
+                        modifier = Modifier.weight(1f).basicMarquee(), maxLines = 1)
                     Text("初診 ${Fmt.int(s.firstVisit)}",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(10.dp))
+                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
                     Text("複診 ${Fmt.int(s.returnVisit)}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.width(10.dp))
+                        color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
                     Text("初診率 ${String.format("%.1f%%", s.firstRate)}",
                         style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary)
+                        color = MaterialTheme.colorScheme.primary, maxLines = 1)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -606,13 +623,16 @@ fun BedCategoryHeatCard(
                     campusTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).basicMarquee(),
+                    maxLines = 1
                 )
                 if (ymStr.isNotEmpty()) {
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         ymStr,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1
                     )
                 }
             }
@@ -653,13 +673,16 @@ fun BedCategoryHeatCard(
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color.Black,
+                                            modifier = Modifier.weight(1f).basicMarquee(),
                                             maxLines = 1
                                         )
+                                        Spacer(Modifier.width(4.dp))
                                         Text(
                                             String.format("%.1f%%", rate),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.Black
+                                            color = Color.Black,
+                                            maxLines = 1
                                         )
                                     }
                                 }

@@ -267,5 +267,35 @@ class OpdRegressionTest {
         assertEquals(5, tabs.size)
         assertFalse(tabs.any { it.contains("佔床率") || it.contains("醫師服務") || it.contains("醫師收入") })
     }
+
+    @Test
+    fun testFontScaleSettingsLevelAndMultipliers() {
+        // 驗證 5 級字體設定：以目前顯示設定為最小（1.0x），共有 5 級
+        val multipliers = com.example.hospital_dashboard.DashboardViewModel.FONT_SCALE_MULTIPLIERS
+        val names = com.example.hospital_dashboard.DashboardViewModel.FONT_SCALE_NAMES
+        assertEquals(5, multipliers.size)
+        assertEquals(5, names.size)
+        assertEquals(1.00f, multipliers[0], 0.001f)
+        assertEquals("最小 (目前)", names[0])
+        for (i in 0 until multipliers.size - 1) {
+            assertTrue("字體倍率需遞增", multipliers[i + 1] > multipliers[i])
+        }
+    }
+
+    @Test
+    fun testDynamicChartHeightForSingleBranch() {
+        // 驗證單一院區時圖表高度縮小，避免空白
+        val singleLineH = com.example.hospital_dashboard.ui.charts.dynamicLineHeight(isSingleBranch = true)
+        val multiLineH = com.example.hospital_dashboard.ui.charts.dynamicLineHeight(isSingleBranch = false)
+        assertEquals(140f, singleLineH.value, 0.01f)
+        assertEquals(220f, multiLineH.value, 0.01f)
+
+        // 驗證橫條圖依列數自動調整高度
+        assertEquals(80f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(1).value, 0.01f)
+        assertEquals(115f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(2).value, 0.01f)
+        assertEquals(150f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(3).value, 0.01f)
+        assertEquals(185f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(4).value, 0.01f)
+        assertEquals(240f, com.example.hospital_dashboard.ui.charts.dynamicHBarHeight(7).value, 0.01f)
+    }
 }
 
