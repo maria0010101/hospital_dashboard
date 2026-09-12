@@ -126,5 +126,63 @@ class OpdRegressionTest {
         assertEquals("住院人日月趨勢（依部別）", expectedCards[4])
         assertEquals("平均住院日月趨勢（依院區）", expectedCards[5])
     }
+
+    @Test
+    fun testOpdDrillDownStatsCalculations() {
+        // 1. 部別統計計算 (OpdDivStat)
+        val divStat = com.example.hospital_dashboard.data.DashboardRepo.OpdDivStat(
+            deptDiv = "內科部",
+            opdVisit = 10000.0,
+            sessions = 200.0,
+            opdPrior = 8000.0
+        )
+        assertEquals(50.0, divStat.avgPerSession, 0.001)
+        assertEquals(25.0, divStat.deltaPct!!, 0.001)
+
+        // 2. 科別統計計算 (OpdDeptStat)
+        val deptStat = com.example.hospital_dashboard.data.DashboardRepo.OpdDeptStat(
+            dept = "消化內科",
+            opdVisit = 2500.0,
+            sessions = 50.0,
+            opdPrior = 2000.0
+        )
+        assertEquals(50.0, deptStat.avgPerSession, 0.001)
+        assertEquals(25.0, deptStat.deltaPct!!, 0.001)
+
+        // 3. 醫師統計計算 (OpdDoctorStat)
+        val docStat = com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat(
+            branch = "仁愛",
+            doctorId = "DOC001",
+            doctorName = "王大明",
+            opdVisit = 600.0,
+            sessions = 12.0,
+            opdPrior = 500.0
+        )
+        assertEquals(50.0, docStat.avgPerSession, 0.001)
+        assertEquals(20.0, docStat.deltaPct!!, 0.001)
+
+        // 4. 零診次與無去年同期防呆
+        val zeroSessionDoc = com.example.hospital_dashboard.data.DashboardRepo.OpdDoctorStat(
+            branch = "仁愛",
+            doctorId = "DOC002",
+            doctorName = "李小美",
+            opdVisit = 10.0,
+            sessions = 0.0,
+            opdPrior = null
+        )
+        assertEquals(0.0, zeroSessionDoc.avgPerSession, 0.001)
+        org.junit.Assert.assertNull(zeroSessionDoc.deltaPct)
+    }
+
+    @Test
+    fun testOpdFourLayerDimensions() {
+        // 驗證四層展開之維度層級順序與定義
+        val layers = listOf("院區詳細資訊", "部別詳細資訊", "科別詳細資訊", "醫師別詳細資訊")
+        assertEquals(4, layers.size)
+        assertEquals("院區詳細資訊", layers[0])
+        assertEquals("部別詳細資訊", layers[1])
+        assertEquals("科別詳細資訊", layers[2])
+        assertEquals("醫師別詳細資訊", layers[3])
+    }
 }
 

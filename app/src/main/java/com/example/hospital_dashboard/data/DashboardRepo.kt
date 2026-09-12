@@ -816,7 +816,213 @@ class DashboardRepo(private val db: HospitalDb) {
         } + priorMap.keys.filter { d -> cur.none { it[0]?.toString() == d } }
             .map { BranchOpdDeptStat(it, 0.0, priorMap[it]) })
             .sortedByDescending { it.opd }
-            .take(limit)
+    }
+
+    /** 院區門診各部別統計 (依門診人次降冪)。 */
+    data class OpdDivStat(
+        val deptDiv: String,
+        val opdVisit: Double,
+        val sessions: Double,
+        val opdPrior: Double? = null
+    ) {
+        val avgPerSession: Double
+            get() = if (sessions > 0) opdVisit / sessions else 0.0
+        val deltaPct: Double?
+            get() = if (opdPrior != null && opdPrior > 0) (opdVisit - opdPrior) / opdPrior * 100.0 else null
+    }
+
+    /** 院區某部別門診各科別統計 (依門診人次降冪)。 */
+    data class OpdDeptStat(
+        val dept: String,
+        val opdVisit: Double,
+        val sessions: Double,
+        val opdPrior: Double? = null
+    ) {
+        val avgPerSession: Double
+            get() = if (sessions > 0) opdVisit / sessions else 0.0
+        val deltaPct: Double?
+            get() = if (opdPrior != null && opdPrior > 0) (opdVisit - opdPrior) / opdPrior * 100.0 else null
+    }
+
+    /** 某院區某部別某科別各醫師服務量 (依門診人次降冪)。 */
+    data class OpdDoctorStat(
+        val branch: String,
+        val doctorId: String,
+        val doctorName: String,
+        val opdVisit: Double,
+        val sessions: Double,
+        val opdPrior: Double? = null
+    ) {
+        val avgPerSession: Double
+            get() = if (sessions > 0) opdVisit / sessions else 0.0
+        val deltaPct: Double?
+            get() = if (opdPrior != null && opdPrior > 0) (opdVisit - opdPrior) / opdPrior * 100.0 else null
+    }
+
+    /** 查詢指定院區與年月之各部別門診人次統計。 */
+    fun opdBranchDivStats(
+        branch: String,
+        year: Int,
+        month: Int,
+        showYoy: Boolean = true
+    ): List<OpdDivStat> {
+        val cleanBranch = branch.replace("院區", "").trim()
+        val isAll = cleanBranch == "全院" || cleanBranch == "全部"
+        val branchCond = if (!isAll) "AND branch_name = ?" else ""
+        val curParams = if (!isAll) {
+            arrayOf<Any?>(year, month, cleanBranch)
+        } else {
+            arrayOf<Any?>(year, month)
+        }
+        val curRows = db.query(
+            "SELECT dept_div, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond " +
+                "AND dept_div IS NOT NULL AND dept_div != '' GROUP BY dept_div",
+            curParams
+        )
+        val priorMap = if (showYoy) {
+            val priorParams = if (!isAll) {
+                arrayOf<Any?>(year - 1, month, cleanBranch)
+            } else {
+                arrayOf<Any?>(year - 1, month)
+            }
+            val priorRows = db.query(
+                "SELECT dept_div, SUM(CAST(opd_visit_count AS REAL)) " +
+                    "FROM outpatient_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond " +
+                    "AND dept_div IS NOT NULL AND dept_div != '' GROUP BY dept_div",
+                priorParams
+            )
+            priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        return curRows.mapNotNull { r ->
+            val div = r[0]?.toString() ?: return@mapNotNull null
+            val opd = num(r[1]) ?: 0.0
+            val sess = num(r[2]) ?: 0.0
+            OpdDivStat(
+                deptDiv = div,
+                opdVisit = opd,
+                sessions = sess,
+                opdPrior = priorMap[div]
+            )
+        }.sortedByDescending { it.opdVisit }
+    }
+
+    /** 查詢指定院區、部別與年月之各科別門診人次統計。 */
+    fun opdBranchDivDeptStats(
+        branch: String,
+        deptDiv: String,
+        year: Int,
+        month: Int,
+        showYoy: Boolean = true
+    ): List<OpdDeptStat> {
+        val cleanBranch = branch.replace("院區", "").trim()
+        val isAll = cleanBranch == "全院" || cleanBranch == "全部"
+        val branchCond = if (!isAll) "AND branch_name = ?" else ""
+        val curParams = if (!isAll) {
+            arrayOf<Any?>(year, month, cleanBranch, deptDiv)
+        } else {
+            arrayOf<Any?>(year, month, deptDiv)
+        }
+        val curRows = db.query(
+            "SELECT dept, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(total_clinic_sessions AS REAL)) " +
+                "FROM outpatient_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond AND dept_div = ? " +
+                "AND dept IS NOT NULL AND dept != '' GROUP BY dept",
+            curParams
+        )
+        val priorMap = if (showYoy) {
+            val priorParams = if (!isAll) {
+                arrayOf<Any?>(year - 1, month, cleanBranch, deptDiv)
+            } else {
+                arrayOf<Any?>(year - 1, month, deptDiv)
+            }
+            val priorRows = db.query(
+                "SELECT dept, SUM(CAST(opd_visit_count AS REAL)) " +
+                    "FROM outpatient_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond AND dept_div = ? " +
+                    "AND dept IS NOT NULL AND dept != '' GROUP BY dept",
+                priorParams
+            )
+            priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+        } else emptyMap()
+
+        return curRows.mapNotNull { r ->
+            val dept = r[0]?.toString() ?: return@mapNotNull null
+            val opd = num(r[1]) ?: 0.0
+            val sess = num(r[2]) ?: 0.0
+            OpdDeptStat(
+                dept = dept,
+                opdVisit = opd,
+                sessions = sess,
+                opdPrior = priorMap[dept]
+            )
+        }.sortedByDescending { it.opdVisit }
+    }
+
+    /** 查詢指定院區、部別、科別與年月之各醫師門診人次服務量。 */
+    fun opdDoctorStats(
+        branch: String,
+        deptDiv: String,
+        dept: String,
+        year: Int,
+        month: Int,
+        showYoy: Boolean = true
+    ): List<OpdDoctorStat> {
+        return try {
+            val cleanBranch = branch.replace("院區", "").trim()
+            val isAll = cleanBranch == "全院" || cleanBranch == "全部"
+            val branchCond = if (!isAll) "AND branch_name = ?" else ""
+            val curParams = if (!isAll) {
+                arrayOf<Any?>(year, month, cleanBranch, dept)
+            } else {
+                arrayOf<Any?>(year, month, dept)
+            }
+            val curRows = db.query(
+                "SELECT branch_name, doctor_id, doctor_name, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(sessions AS REAL)) " +
+                    "FROM physician_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond AND dept = ? " +
+                    "AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                    "GROUP BY branch_name, doctor_id, doctor_name",
+                curParams
+            )
+            val priorMap = if (showYoy) {
+                val priorParams = if (!isAll) {
+                    arrayOf<Any?>(year - 1, month, cleanBranch, dept)
+                } else {
+                    arrayOf<Any?>(year - 1, month, dept)
+                }
+                val priorRows = db.query(
+                    "SELECT branch_name, doctor_id, doctor_name, SUM(CAST(opd_visit_count AS REAL)) " +
+                        "FROM physician_service WHERE CAST(year AS INTEGER) = ? AND CAST(month AS INTEGER) = ? $branchCond AND dept = ? " +
+                        "AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                        "GROUP BY branch_name, doctor_id, doctor_name",
+                    priorParams
+                )
+                priorRows.associate {
+                    val b = it[0]?.toString() ?: ""
+                    val id = it[1]?.toString() ?: ""
+                    val name = it[2]?.toString() ?: ""
+                    "$b-$id-$name" to (num(it[3]) ?: 0.0)
+                }
+            } else emptyMap()
+
+            curRows.mapNotNull { r ->
+                val b = r[0]?.toString() ?: ""
+                val id = r[1]?.toString() ?: ""
+                val name = r[2]?.toString() ?: return@mapNotNull null
+                val opd = num(r[3]) ?: 0.0
+                val sess = num(r[4]) ?: 0.0
+                val key = "$b-$id-$name"
+                OpdDoctorStat(
+                    branch = b,
+                    doctorId = id,
+                    doctorName = name,
+                    opdVisit = opd,
+                    sessions = sess,
+                    opdPrior = priorMap[key]
+                )
+            }.sortedWith(compareByDescending<OpdDoctorStat> { it.opdVisit }.thenByDescending { it.sessions })
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     /** 各院區初診/複診統計(依目前篩選區間累計)。 */

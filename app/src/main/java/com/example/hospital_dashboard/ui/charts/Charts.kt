@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -340,11 +341,19 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
                     } else {
                         // 點擊資料點 → 詳細數據工具卡(固定不隨縮放)
                         pointInfo?.let { info ->
-                            LineTooltipCard(
-                                info, content.yFormatter,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                onDismiss = { pointInfo = null }
-                            )
+                            if (content.title == "門診人次月趨勢（依院區）" || content.title.contains("門診人次月趨勢")) {
+                                OpdBranchDrillDownCard(
+                                    vm, info, content.yFormatter,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { pointInfo = null }
+                                )
+                            } else {
+                                LineTooltipCard(
+                                    info, content.yFormatter,
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    onDismiss = { pointInfo = null }
+                                )
+                            }
                         }
                     }
                 }
@@ -722,6 +731,535 @@ private fun LineTooltipCard(
                                     fontWeight = FontWeight.Bold,
                                     color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 門診人次月趨勢（依院區）四層展開詳細資訊卡片：
+ * 第 1 層：院區詳細資訊 (Branch)
+ * 第 2 層：該院區各部別詳細資訊 (Division)
+ * 第 3 層：該院區該部別各科別詳細資訊 (Department)
+ * 第 4 層：該院區該部別該科別各醫師服務量詳細資訊 (Doctor)
+ */
+private enum class OpdDrillLevel {
+    BRANCH, DIVISION, DEPARTMENT, DOCTOR
+}
+
+@Composable
+private fun OpdBranchDrillDownCard(
+    vm: DashboardViewModel,
+    info: PointInfo,
+    yFormatter: (Double) -> String,
+    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit
+) {
+    var level by remember(info) { mutableStateOf(OpdDrillLevel.BRANCH) }
+    var selectedBranch by remember(info) { mutableStateOf<String?>(null) }
+    var selectedDivision by remember(info) { mutableStateOf<String?>(null) }
+    var selectedDepartment by remember(info) { mutableStateOf<String?>(null) }
+
+    val parsedYm: Pair<Int, Int> = remember(info.xLabel) {
+        parseYmLabel(info.xLabel) ?: run {
+            val m = Regex("""(\d+)[年/-](\d+)""").find(info.xLabel)
+            if (m != null) {
+                val y = m.groupValues[1].toIntOrNull()
+                val mo = m.groupValues[2].toIntOrNull()
+                if (y != null && mo != null) Pair(y, mo) else null
+            } else null
+        } ?: run {
+            val y = vm.filters.value.years.firstOrNull()?.toIntOrNull() ?: 113
+            val m = vm.filters.value.months.firstOrNull()?.toIntOrNull() ?: 1
+            Pair(y, m)
+        }
+    }
+
+    // Android 返回鍵攔截：逐層返回
+    BackHandler(enabled = true) {
+        when (level) {
+            OpdDrillLevel.DOCTOR -> {
+                level = OpdDrillLevel.DEPARTMENT
+                selectedDepartment = null
+            }
+            OpdDrillLevel.DEPARTMENT -> {
+                level = OpdDrillLevel.DIVISION
+                selectedDivision = null
+            }
+            OpdDrillLevel.DIVISION -> {
+                level = OpdDrillLevel.BRANCH
+                selectedBranch = null
+            }
+            OpdDrillLevel.BRANCH -> onDismiss()
+        }
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth(0.96f)
+            .padding(8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Column(
+            Modifier
+                .heightIn(max = 260.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            // 頂部導航列：返回按鈕 + 麵包屑導航 + 關閉按鈕
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (level != OpdDrillLevel.BRANCH) {
+                    Text(
+                        "← 返回",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable {
+                                when (level) {
+                                    OpdDrillLevel.DOCTOR -> {
+                                        level = OpdDrillLevel.DEPARTMENT
+                                        selectedDepartment = null
+                                    }
+                                    OpdDrillLevel.DEPARTMENT -> {
+                                        level = OpdDrillLevel.DIVISION
+                                        selectedDivision = null
+                                    }
+                                    OpdDrillLevel.DIVISION -> {
+                                        level = OpdDrillLevel.BRANCH
+                                        selectedBranch = null
+                                    }
+                                    OpdDrillLevel.BRANCH -> {}
+                                }
+                            }
+                            .padding(end = 8.dp, top = 2.dp, bottom = 2.dp)
+                    )
+                }
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "📅 ${info.xLabel}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (level == OpdDrillLevel.BRANCH) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            level = OpdDrillLevel.BRANCH
+                            selectedBranch = null
+                            selectedDivision = null
+                            selectedDepartment = null
+                        }
+                    )
+                    if (selectedBranch != null) {
+                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            selectedBranch!!,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (level == OpdDrillLevel.DIVISION) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable {
+                                level = OpdDrillLevel.DIVISION
+                                selectedDivision = null
+                                selectedDepartment = null
+                            }
+                        )
+                    }
+                    if (selectedDivision != null) {
+                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            selectedDivision!!,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (level == OpdDrillLevel.DEPARTMENT) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable {
+                                level = OpdDrillLevel.DEPARTMENT
+                                selectedDepartment = null
+                            }
+                        )
+                    }
+                    if (selectedDepartment != null) {
+                        Text(" › ", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            selectedDepartment!!,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                Text(
+                    "✕",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.outline,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable(onClick = onDismiss)
+                        .padding(4.dp)
+                )
+            }
+
+            // 層級提示列
+            val levelHint = when (level) {
+                OpdDrillLevel.BRANCH -> "💡 院區詳細資訊（點擊院區展開部別）"
+                OpdDrillLevel.DIVISION -> "💡 部別詳細資訊（點擊部別展開科別）"
+                OpdDrillLevel.DEPARTMENT -> "💡 科別詳細資訊（點擊科別展開醫師別）"
+                OpdDrillLevel.DOCTOR -> "💡 醫師別詳細資訊"
+            }
+            Text(
+                levelHint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            // 滾動內容區域
+            Column(
+                Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                when (level) {
+                    OpdDrillLevel.BRANCH -> {
+                        info.items.forEachIndexed { i, item ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                                    .clickable {
+                                        selectedBranch = item.seriesName
+                                        level = OpdDrillLevel.DIVISION
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            Modifier
+                                                .size(10.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(seriesColor(item.seriesName, i))
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            item.seriesName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            "${yFormatter(item.value)} 人次",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        if (item.prior != null) {
+                                            Text(
+                                                "去年 ${yFormatter(item.prior)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        if (item.deltaPct != null) {
+                                            val up = item.deltaPct >= 0
+                                            Text(
+                                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            "›",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    if (item.recent3.any { it != null }) {
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                "近三個月 " + item.recent3.joinToString(" → ") { v ->
+                                                    if (v != null) yFormatter(v) else "—"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (item.recentDeltaPct != null) {
+                                                val up = item.recentDeltaPct >= 0
+                                                Text(
+                                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OpdDrillLevel.DIVISION -> {
+                        val branch = selectedBranch ?: ""
+                        val divStats by produceState<List<DashboardRepo.OpdDivStat>?>(initialValue = null, branch, parsedYm) {
+                            value = withContext(Dispatchers.IO) {
+                                val y = parsedYm.first
+                                val m = parsedYm.second
+                                vm.repo.opdBranchDivStats(branch, y, m, showYoy = true)
+                            }
+                        }
+                        if (divStats == null) {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(24.dp))
+                            }
+                        } else if (divStats!!.isEmpty()) {
+                            Text(
+                                "查無此院區之部別門診資料",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        } else {
+                            divStats!!.forEach { stat ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable {
+                                            selectedDivision = stat.deptDiv
+                                            level = OpdDrillLevel.DEPARTMENT
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(stat.deptDiv, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (stat.opdPrior != null) {
+                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                val delta = stat.deltaPct
+                                                if (delta != null) {
+                                                    val up = delta >= 0
+                                                    Text(
+                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "›",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OpdDrillLevel.DEPARTMENT -> {
+                        val branch = selectedBranch ?: ""
+                        val div = selectedDivision ?: ""
+                        val deptStats by produceState<List<DashboardRepo.OpdDeptStat>?>(initialValue = null, branch, div, parsedYm) {
+                            value = withContext(Dispatchers.IO) {
+                                val y = parsedYm.first
+                                val m = parsedYm.second
+                                vm.repo.opdBranchDivDeptStats(branch, div, y, m, showYoy = true)
+                            }
+                        }
+                        if (deptStats == null) {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(24.dp))
+                            }
+                        } else if (deptStats!!.isEmpty()) {
+                            Text(
+                                "查無此部別之科別門診資料",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        } else {
+                            deptStats!!.forEach { stat ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable {
+                                            selectedDepartment = stat.dept
+                                            level = OpdDrillLevel.DOCTOR
+                                        },
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(stat.dept, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (stat.opdPrior != null) {
+                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                val delta = stat.deltaPct
+                                                if (delta != null) {
+                                                    val up = delta >= 0
+                                                    Text(
+                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "›",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OpdDrillLevel.DOCTOR -> {
+                        val branch = selectedBranch ?: ""
+                        val div = selectedDivision ?: ""
+                        val dept = selectedDepartment ?: ""
+                        val docStats by produceState<List<DashboardRepo.OpdDoctorStat>?>(initialValue = null, branch, div, dept, parsedYm) {
+                            value = withContext(Dispatchers.IO) {
+                                val y = parsedYm.first
+                                val m = parsedYm.second
+                                vm.repo.opdDoctorStats(branch, div, dept, y, m, showYoy = true)
+                            }
+                        }
+                        if (docStats == null) {
+                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(24.dp))
+                            }
+                        } else if (docStats!!.isEmpty()) {
+                            Text(
+                                "此科別暫無醫師服務量明細資料",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        } else {
+                            Text(
+                                "👨‍⚕️ 共 ${docStats!!.size} 位醫師",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                            docStats!!.forEach { stat ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(stat.doctorName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                                if (stat.doctorId.isNotEmpty()) {
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("(${stat.doctorId})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                }
+                                                if ((branch == "全院" || branch == "全部") && stat.branch.isNotEmpty()) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text(stat.branch, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("${stat.sessions.toInt()} 診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("平均 ${String.format("%.1f", stat.avgPerSession)} 人/診", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("${yFormatter(stat.opdVisit)} 人次", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (stat.opdPrior != null) {
+                                                    Text("去年 ${yFormatter(stat.opdPrior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                val delta = stat.deltaPct
+                                                if (delta != null) {
+                                                    val up = delta >= 0
+                                                    Text(
+                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
