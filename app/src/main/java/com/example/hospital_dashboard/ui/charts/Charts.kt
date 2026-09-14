@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -893,6 +894,7 @@ private fun UniversalDrillDownCard(
     var selectedBranch by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialBranch) }
     var selectedDivision by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialDivision) }
     var selectedDepartment by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf<String?>(null) }
+    val isWide = LocalConfiguration.current.screenWidthDp >= 600
 
     val parsedYm: Pair<Int, Int> = remember(info.xLabel) {
         parseYmLabel(info.xLabel) ?: run {
@@ -1154,45 +1156,89 @@ private fun UniversalDrillDownCard(
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
-                                    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                Modifier
-                                                    .size(10.dp)
-                                                    .clip(RoundedCornerShape(2.dp))
-                                                    .background(seriesColor(item.seriesName, i))
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                item.seriesName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                "${yFormatter(item.value)} ${config.unit}",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            if (item.prior != null) {
-                                                Text(
-                                                    "去年 ${yFormatter(item.prior)}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.outline
+                                    if (isWide) {
+                                        Row(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // 1. 左側：院區與圖例顏色
+                                            Row(
+                                                Modifier.weight(1f),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Box(
+                                                    Modifier
+                                                        .size(10.dp)
+                                                        .clip(RoundedCornerShape(2.dp))
+                                                        .background(seriesColor(item.seriesName, i))
                                                 )
                                                 Spacer(Modifier.width(8.dp))
-                                            }
-                                            if (item.deltaPct != null) {
-                                                val up = item.deltaPct >= 0
                                                 Text(
-                                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                    item.seriesName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold
                                                 )
-                                                Spacer(Modifier.width(6.dp))
                                             }
+
+                                            // 2. 中間空白處：近三個月趨勢
+                                            if (item.recent3.any { it != null }) {
+                                                Column(
+                                                    Modifier
+                                                        .weight(1.3f)
+                                                        .padding(horizontal = 8.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        "近三個月 " + item.recent3.joinToString(" → ") { v -> if (v != null) yFormatter(v) else "—" },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.outline,
+                                                        maxLines = 1
+                                                    )
+                                                    if (item.recentDeltaPct != null) {
+                                                        val up = item.recentDeltaPct >= 0
+                                                        Text(
+                                                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Spacer(Modifier.weight(1.3f))
+                                            }
+
+                                            // 3. 右側：當月數據與去年同期
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text(
+                                                    "${yFormatter(item.value)} ${config.unit}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (item.prior != null) {
+                                                        Text(
+                                                            "去年 ${yFormatter(item.prior)}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.outline
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    if (item.deltaPct != null) {
+                                                        val up = item.deltaPct >= 0
+                                                        Text(
+                                                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(Modifier.width(8.dp))
                                             Text(
                                                 "›",
                                                 style = MaterialTheme.typography.titleMedium,
@@ -1200,27 +1246,75 @@ private fun UniversalDrillDownCard(
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
-                                        if (item.recent3.any { it != null }) {
-                                            Row(
-                                                Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
+                                    } else {
+                                        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(
+                                                    Modifier
+                                                        .size(10.dp)
+                                                        .clip(RoundedCornerShape(2.dp))
+                                                        .background(seriesColor(item.seriesName, i))
+                                                )
+                                                Spacer(Modifier.width(8.dp))
                                                 Text(
-                                                    "近三個月 " + item.recent3.joinToString(" → ") { v ->
-                                                        if (v != null) yFormatter(v) else "—"
-                                                    },
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.outline,
+                                                    item.seriesName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
                                                     modifier = Modifier.weight(1f)
                                                 )
-                                                if (item.recentDeltaPct != null) {
-                                                    val up = item.recentDeltaPct >= 0
+                                                Text(
+                                                    "${yFormatter(item.value)} ${config.unit}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                if (item.prior != null) {
                                                     Text(
-                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                        "去年 ${yFormatter(item.prior)}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                }
+                                                if (item.deltaPct != null) {
+                                                    val up = item.deltaPct >= 0
+                                                    Text(
+                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontWeight = FontWeight.Bold,
                                                         color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
                                                     )
+                                                    Spacer(Modifier.width(6.dp))
+                                                }
+                                                Text(
+                                                    "›",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            if (item.recent3.any { it != null }) {
+                                                Row(
+                                                    Modifier.fillMaxWidth().padding(start = 18.dp, top = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        "近三個月 " + item.recent3.joinToString(" → ") { v ->
+                                                            if (v != null) yFormatter(v) else "—"
+                                                        },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.outline,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    if (item.recentDeltaPct != null) {
+                                                        val up = item.recentDeltaPct >= 0
+                                                        Text(
+                                                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1264,67 +1358,21 @@ private fun UniversalDrillDownCard(
                             )
                         } else {
                             activeItems.forEach { stat ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp)
-                                        .clickable {
-                                            if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
-                                                selectedDivision = stat.name
-                                            } else {
-                                                selectedBranch = stat.name
-                                            }
-                                            level = UniversalDrillLevel.LEVEL_3
-                                        },
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    if (stat.avgPerUnit != null) {
-                                                        Spacer(Modifier.width(8.dp))
-                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    }
-                                                }
-                                            }
+                                DrillStatCard(
+                                    stat = stat,
+                                    config = config,
+                                    yFormatter = yFormatter,
+                                    isWide = isWide,
+                                    showArrow = true,
+                                    onClick = {
+                                        if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) {
+                                            selectedDivision = stat.name
+                                        } else {
+                                            selectedBranch = stat.name
                                         }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.prior != null) {
-                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                val delta = stat.deltaPct
-                                                if (delta != null) {
-                                                    val up = delta >= 0
-                                                    Text(
-                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            "›",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        level = UniversalDrillLevel.LEVEL_3
                                     }
-                                }
+                                )
                             }
                         }
                     }
@@ -1362,69 +1410,19 @@ private fun UniversalDrillDownCard(
                             )
                         } else {
                             activeDepts.forEach { stat ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp)
-                                        .let { m ->
-                                            if (config.maxLevels == 4) {
-                                                m.clickable {
-                                                    selectedDepartment = stat.name
-                                                    level = UniversalDrillLevel.LEVEL_4
-                                                }
-                                            } else m
-                                        },
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    if (stat.avgPerUnit != null) {
-                                                        Spacer(Modifier.width(8.dp))
-                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    }
-                                                }
-                                            }
+                                DrillStatCard(
+                                    stat = stat,
+                                    config = config,
+                                    yFormatter = yFormatter,
+                                    isWide = isWide,
+                                    showArrow = (config.maxLevels == 4),
+                                    onClick = if (config.maxLevels == 4) {
+                                        {
+                                            selectedDepartment = stat.name
+                                            level = UniversalDrillLevel.LEVEL_4
                                         }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.prior != null) {
-                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                val delta = stat.deltaPct
-                                                if (delta != null) {
-                                                    val up = delta >= 0
-                                                    Text(
-                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        if (config.maxLevels == 4) {
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(
-                                                "›",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
+                                    } else null
+                                )
                             }
                         }
                     }
@@ -1469,63 +1467,263 @@ private fun UniversalDrillDownCard(
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                             activeDocs.forEach { stat ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(stat.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                                if (!stat.extraId.isNullOrEmpty()) {
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text("(${stat.extraId})", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                }
-                                                if (!stat.tag.isNullOrEmpty()) {
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Text(stat.tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                                }
-                                            }
-                                            if (stat.secondaryValue != null && stat.secondaryValue > 0) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    if (stat.avgPerUnit != null) {
-                                                        Spacer(Modifier.width(8.dp))
-                                                        Text("平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text("${yFormatter(stat.value)} ${config.unit}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (stat.prior != null) {
-                                                    Text("去年 ${yFormatter(stat.prior)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                                                    Spacer(Modifier.width(6.dp))
-                                                }
-                                                val delta = stat.deltaPct
-                                                if (delta != null) {
-                                                    val up = delta >= 0
-                                                    Text(
-                                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
+                                DrillStatCard(
+                                    stat = stat,
+                                    config = config,
+                                    yFormatter = yFormatter,
+                                    isWide = isWide,
+                                    showArrow = false,
+                                    onClick = null
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 通用多維度下鑽統計項目卡片（支援寬螢幕中間欄位呈現近三個月趨勢） */
+@Composable
+private fun DrillStatCard(
+    stat: DashboardRepo.UniversalDrillStat,
+    config: DrillMetricConfig,
+    yFormatter: (Double) -> String,
+    isWide: Boolean,
+    showArrow: Boolean,
+    onClick: (() -> Unit)? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        if (isWide) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. 左側：名稱與次要指標
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stat.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!stat.extraId.isNullOrEmpty()) {
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "(${stat.extraId})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        if (!stat.tag.isNullOrEmpty()) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stat.tag,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    if (stat.secondaryValue != null && stat.secondaryValue > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            if (stat.avgPerUnit != null) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. 中間空白處：呈現近三個月趨勢
+                if (stat.recent3.any { it != null }) {
+                    Column(
+                        Modifier
+                            .weight(1.3f)
+                            .padding(horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "近三個月 " + stat.recent3.joinToString(" → ") { v -> if (v != null) yFormatter(v) else "—" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1
+                        )
+                        if (stat.recentDeltaPct != null) {
+                            val up = stat.recentDeltaPct >= 0
+                            Text(
+                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", stat.recentDeltaPct),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            )
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.weight(1.3f))
+                }
+
+                // 3. 右側：當月數據與去年同期
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${yFormatter(stat.value)} ${config.unit}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (stat.prior != null) {
+                            Text(
+                                "去年 ${yFormatter(stat.prior)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        val delta = stat.deltaPct
+                        if (delta != null) {
+                            val up = delta >= 0
+                            Text(
+                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            )
+                        }
+                    }
+                }
+
+                if (showArrow) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "›",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            // 直向模式 (portrait)
+            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stat.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (!stat.extraId.isNullOrEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "(${stat.extraId})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            if (!stat.tag.isNullOrEmpty()) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    stat.tag,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        if (stat.secondaryValue != null && stat.secondaryValue > 0) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "${stat.secondaryValue.toInt()} ${stat.secondaryLabel ?: ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                if (stat.avgPerUnit != null) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "平均 ${String.format("%.1f", stat.avgPerUnit)} ${stat.avgLabel ?: ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
                                 }
                             }
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "${yFormatter(stat.value)} ${config.unit}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (stat.prior != null) {
+                                Text(
+                                    "去年 ${yFormatter(stat.prior)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            val delta = stat.deltaPct
+                            if (delta != null) {
+                                val up = delta >= 0
+                                Text(
+                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                )
+                            }
+                        }
+                    }
+                    if (showArrow) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "›",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                if (stat.recent3.any { it != null }) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "近三個月 " + stat.recent3.joinToString(" → ") { v -> if (v != null) yFormatter(v) else "—" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (stat.recentDeltaPct != null) {
+                            val up = stat.recentDeltaPct >= 0
+                            Text(
+                                (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", stat.recentDeltaPct),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            )
                         }
                     }
                 }

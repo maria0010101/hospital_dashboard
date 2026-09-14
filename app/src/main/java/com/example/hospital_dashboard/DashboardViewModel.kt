@@ -102,7 +102,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     /** 使用者從檔案選擇器選取的 xlsx → 複製到內部儲存 → 匯入。 */
     fun importFromUri(uri: Uri) {
         viewModelScope.launch {
-            _uiState.value = UiState.Importing("準備中…", 0, 0, 7)
+            _uiState.value = UiState.Importing("準備中…", 0, 0, SheetConfigs.ALL.size)
             try {
                 val ctx = getApplication<Application>()
                 val name = queryDisplayName(ctx, uri) ?: "業務資料彙整.xlsx"

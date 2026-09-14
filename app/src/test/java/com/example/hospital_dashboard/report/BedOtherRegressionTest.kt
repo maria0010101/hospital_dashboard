@@ -164,4 +164,54 @@ class BedOtherRegressionTest {
         val allShown = buildOtherFilter(false)
         assertEquals("", allShown)
     }
+
+    @Test
+    fun testDiffBedSheetConfigExists() {
+        val cfg = com.example.hospital_dashboard.data.SheetConfigs.bySheet("差額病床業務資料")
+        assertNotNull("差額病床業務資料 config should exist", cfg)
+        assertEquals("diff_bed_service", cfg?.table)
+        assertEquals(18, cfg?.columns?.size)
+        assertEquals("branch_name", cfg?.columns?.get(1)) // B欄 院區
+        assertEquals("category", cfg?.columns?.get(4))    // E欄 類別
+        assertEquals("inpatient_days", cfg?.columns?.get(10)) // K欄 住院人日
+        assertEquals("open_bed_days", cfg?.columns?.get(16))  // Q欄 實開床天數
+
+        // Test derive logic (ym -> year/month if missing)
+        val rowWithNullYm = List(18) { i ->
+            when (i) {
+                0 -> "11405"
+                1 -> "中興"
+                else -> null
+            }
+        }
+        val derived = cfg?.derive?.invoke(rowWithNullYm)
+        assertNotNull(derived)
+        assertEquals("114", derived?.get(12)) // M欄 year
+        assertEquals("5", derived?.get(13))   // N欄 month
+    }
+
+    @Test
+    fun testDiffBedOccupancyFormulaAndDetail() {
+        // 住院人日 K = 1121, 實開床天數 Q = 1426
+        val inpatientDays = 1121.0
+        val openBedDays = 1426.0
+        val rate = if (openBedDays > 0) (inpatientDays / openBedDays * 100.0) else 0.0
+        assertEquals(78.6115, rate, 0.001)
+
+        val detail = DashboardRepo.BedStationOccDetail(
+            branch = "中興",
+            nursingStation = "7B病房(外)",
+            occupancyRate = 119.35,
+            openBeds = 2.0,
+            registeredBeds = 3.0,
+            inpatientDays = 74.0,
+            openBedDays = 62.0
+        )
+        assertEquals("中興", detail.branch)
+        assertEquals("7B病房(外)", detail.nursingStation)
+        assertEquals(119.35, detail.occupancyRate!!, 0.01)
+        assertEquals(74.0, detail.inpatientDays, 0.01)
+        assertEquals(62.0, detail.openBedDays, 0.01)
+        assertEquals(66.67, detail.openRate, 0.01)
+    }
 }

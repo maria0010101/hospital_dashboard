@@ -13,3 +13,14 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 機敏營運資料檔案與資料庫（嚴格禁止上傳）
+*.xlsx
+*.xls
+*.csv
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

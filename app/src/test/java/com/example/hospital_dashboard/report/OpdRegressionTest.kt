@@ -1,6 +1,7 @@
 package com.example.hospital_dashboard.report
 
 import com.example.hospital_dashboard.data.BarSegment
+import com.example.hospital_dashboard.data.DashboardRepo
 import com.example.hospital_dashboard.data.HBarData
 import com.example.hospital_dashboard.data.HBarRow
 import com.example.hospital_dashboard.data.LineChartData
@@ -355,5 +356,26 @@ class OpdRegressionTest {
         val ym3 = com.example.hospital_dashboard.ui.charts.parseYmFromTitleOrFilters("門診人次月趨勢（依院區）", f)
         assertEquals(115 to 8, ym3)
     }
+
+    @Test
+    fun testUniversalDrillStatRecent3Structure() {
+        // 驗證 UniversalDrillStat 近三個月趨勢與 MoM 增減百分比計算正確性
+        val stat = DashboardRepo.UniversalDrillStat(
+            name = "內科部",
+            value = 16000.0,
+            prior = 15000.0,
+            recent3 = listOf(20000.0, 18000.0, 16000.0),
+            recentDeltaPct = (16000.0 - 18000.0) / 18000.0 * 100.0
+        )
+
+        assertEquals("內科部", stat.name)
+        assertEquals(3, stat.recent3.size)
+        assertEquals(20000.0, stat.recent3[0]!!, 0.01)
+        assertEquals(18000.0, stat.recent3[1]!!, 0.01)
+        assertEquals(16000.0, stat.recent3[2]!!, 0.01)
+        assertNotNull(stat.recentDeltaPct)
+        assertEquals(-11.11, stat.recentDeltaPct!!, 0.01)
+    }
 }
+
 

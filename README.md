@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android
 
-[![Version](https://img.shields.io/badge/version-0.6-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.1)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
@@ -9,10 +9,10 @@
 
 ---
 
-## 📥 最新安裝檔下載 (v0.6)
+## 📥 最新安裝檔下載 (v0.6.1)
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.6.apk`](release/hospital_dashboard_v0.6.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6)
+- **專案內建載點**：[`release/hospital_dashboard_v0.6.1.apk`](release/hospital_dashboard_v0.6.1.apk)
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.1)
 
 ---
 
@@ -20,7 +20,7 @@
 
 1. **⚡ 零第三方依賴離線解析**
    - 採用 Android 原生 `ZipFile` 結合 `XmlPullParser` 流式解析 xlsx 活頁簿，無引入大型肥大函式庫（如 Apache POI）。
-   - 支援 7 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量）十餘萬筆資料之原子交易匯入本機 SQLite（`HospitalDb`）。
+   - 支援 8 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量、差額病床業務資料）十餘萬筆資料之原子交易匯入本機 SQLite（`HospitalDb`）。
 2. **🎨 純原生 Compose Canvas 自繪圖表**
    - 所有折線趨勢圖、單月重疊橫條圖、垂直柱狀圖、圓餅圖、佔床率熱力圖皆由 Jetpack Compose 原生 Canvas 幾何計算繪製，具備極佳的繪製效能與流暢的手勢縮放/拖曳互動。
 3. **🔍 10 項核心營運指標多維度下鑽（3層／4層）**
@@ -30,14 +30,20 @@
    - 篩選單一月份時，報表自動由月趨勢折線圖更換為橫條圖（HBarChart），完全比照折線圖具備多層級下鑽能力。
    - 單一院區自動預選展開至 Level 2（部別詳細資訊），並支援「← 返回」退至 Level 1（院區總額）與頂部麵包屑快速跳層導航。
    - 支援橫條圖全寬觸控判定（點擊長條本體或院區文字皆能精確觸發）。
-5. **🔤 5 級全域字型大小切換與防破版機制**
+5. **📈 多層下鑽近三個月趨勢與排版全面統一**
+   - 門診人次月趨勢展開明細時，第 1 層（院區）、第 2 層（部別）、第 3 層（科別）、第 4 層（醫師別）統一在卡片中間空白處置中呈現「**近三個月 `v1 → v2 → v3`**」以及對應增減百分比「**`▲/▼ XX.X%`**」。
+   - 各階層卡片排版與視覺語言完全一致（左側名稱/代碼/診次，中間置中近三個月趨勢，右側當月數值與去年同期增減比較）。
+6. **🛌 差額病床熱力圖與護理站明細展開**
+   - 匯入「差額病床業務資料」工作表，依院區與差額病床類別以 `住院人日 / 實開床天數 × 100%` 計算佔床率熱力圖。
+   - 點擊熱力圖儲存格即時帶出各護理站佔床率明細 BottomSheet，並優化向上滑動防跳動機制。
+7. **🔤 5 級全域字型大小切換與防破版機制**
    - 於「⚙ 篩選」功能面板提供橫向滑動條，支援 5 級字體：`最小 (1.0x)`、`較小 (1.1x)`、`標準 (1.2x)`、`較大 (1.3x)`、`最大 (1.4x)`。
    - 透過 `LocalDensity` 全域動態注入，即時放大文字與元件。
    - 關鍵欄位套用單行保護與跑馬燈滾動（`Modifier.basicMarquee()`），圖表邊界依字體比例動態擴展，杜絕破版折行與標籤裁切。
-6. **📐 圖表顯示區塊動態高度（消弭留白）**
+8. **📐 圖表顯示區塊動態高度（消弭留白）**
    - 篩選單一院區（或顯示全院）時，折線圖高度由 200~230dp 自動壓縮為 140dp。
    - 單月橫條圖依列數動態計算高度（1 列 80dp、2 列 115dp、3 列 150dp、4 列 185dp、5+ 列 240dp），大幅消除單一項目時大片空白浪費顯示區域。
-7. **🤖 本機脫敏與 AI 輔助決策**
+9. **🤖 本機脫敏與 AI 輔助決策**
    - 支援 OpenAI 相容協定（本地 Ollama／自建 vLLM／Google Gemini／OpenAI），具備即時連線測試。
    - 內建雙向本機混淆機制（院區、部別、科別、門診部、醫師代碼均在本機脫敏），敏感資料不出裝置，並提供串流輸出與報告匯出。
 
@@ -55,7 +61,7 @@ flowchart LR
 ```
 
 ### 1. 門急診
-- **門診人次月趨勢（依院區）**：多月折線圖（含去年同期同色虛線，單月自動切換為重疊橫條圖）。支援 **4 層下鑽**（院區 → 部別 → 科別 → 醫師別）。
+- **門診人次月趨勢（依院區）**：多月折線圖（含去年同期同色虛線，單月自動切換為重疊橫條圖）。支援 **4 層下鑽**（院區 → 部別 → 科別 → 醫師別），各階層中間均置中呈現近三個月趨勢。
 - **急診人次月趨勢（依院區）**：支援 **4 層下鑽**（院區 → 部別 → 科別 → 醫師別）。
 - **各部別門診人次趨勢**：支援 **4 層下鑽**（部別明細 → 院區別明細 → 科別明細 → 醫師別明細）。
 - **初診人次月趨勢（依院區）**：多月折線趨勢與單月重疊橫條圖。
@@ -77,6 +83,7 @@ flowchart LR
   - 排序固定：`全部、一般、ICU、特殊、嬰兒床、其他`。
   - `產後（小孩）` 自動併入 `其他`。
 - **各院區病床類別熱力圖**：依全域篩選月份區間動態取最新月份呈現，支援點擊類別跳轉展開護理站佔床率。
+- **各院區差額病床熱力圖（新增）**：以差額病床業務資料計算各院區各類別佔床率（`住院人日 / 實開床天數 × 100%`），點擊病床儲存格即時彈出各護理站明細。
 
 ### 4. 其他服務
 - **院外門診部服務量趨勢（依院區）**：點擊放大下鑽至各門診部明細卡片。
@@ -110,7 +117,22 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.6 (Latest)**
+### **v0.6.1 (Latest)**
+- **差額病床業務資料匯入與差額病床熱力圖**：
+  - 新增「差額病床業務資料」工作表解析與資料庫儲存（資料表 `bed_differential_service`），包含院區、類別、護理站、住院人日、實開床天數等欄位。
+  - 在「病床利用」分頁下方新增「差額病床熱力圖」，以各院區各類別差額病床佔床率繪製（公式：`住院人日 / 實開床天數 × 100%`）。
+  - 點擊熱力圖儲存格即時彈出該院區該類別之各護理站佔床率、住院人日與實開床天數明細資料。
+  - 修正仁愛院區頭等病床等展開明細時連續向上滑動造成畫面跳動的過度展開錯誤，優化 BottomSheet 高度與滾動狀態。
+- **門急診門診人次月趨勢展開各階層近三個月趨勢與排版統一化**：
+  - 擴充 `UniversalDrillStat` 與 `universalDrillStats`，為第 1~4 層（院區、部別、科別、醫師別）同步提供近三個月趨勢序列與月增減百分比。
+  - 在卡片中間原本空白區域置中呈現「近三個月 `v1 → v2 → v3`」與「`▲/▼ XX.X%`」，使第 1~4 層卡片排版結構與視覺風格完全統一。
+  - 修復 SQLite 查詢以文字比對整數運算式時的隱含型別比對缺陷，確保各層歷史趨勢穩定精確取得。
+- **機敏資料與資安規範強化**：
+  - 於 `.gitignore` 明確規範排除 `*.xlsx`、`*.xls`、`*.csv`、`*.db`、`*.sqlite` 等機敏業務資料與本機資料庫檔案，確保僅上傳專案原始碼與編譯完成之 APK 檔案。
+
+---
+
+### **v0.6**
 - **單月橫條圖模式多層細項下鑽**：
   - 篩選單一月份時，報表由折線圖更換為橫條圖（HBarChart），支援完全比照折線圖的 3 層或 4 層細項下鑽（涵蓋 10 項核心營運指標）。
   - 單一院區（1 列）自動預選展開至 Level 2（部別詳細資訊），並支援「← 返回」退至 Level 1（院區總額）與頂部麵包屑導航。
@@ -199,7 +221,7 @@ flowchart LR
 
 # 編譯 Release APK（已內建 debug keystore 簽章，開箱即裝）
 ./gradlew assembleRelease
-# 產出檔案位置：app/build/outputs/apk/release/app-release.apk
+# 產出檔案位置：release/hospital_dashboard_v0.6.1.apk
 ```
 
 ---

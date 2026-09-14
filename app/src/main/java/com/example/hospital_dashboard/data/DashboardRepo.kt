@@ -868,7 +868,9 @@ class DashboardRepo(private val db: HospitalDb) {
         val avgLabel: String? = null,
         val prior: Double? = null,
         val extraId: String? = null,
-        val tag: String? = null
+        val tag: String? = null,
+        val recent3: List<Double?> = emptyList(),
+        val recentDeltaPct: Double? = null
     ) {
         val deltaPct: Double?
             get() = if (prior != null && prior > 0) (value - prior) / prior * 100.0 else null
@@ -1073,6 +1075,37 @@ class DashboardRepo(private val db: HospitalDb) {
             val isAllBranch = cleanBranch.isEmpty() || cleanBranch == "全院" || cleanBranch == "全部"
             val bCond = if (!isAllBranch) "AND branch_name = ?" else ""
 
+            val yms = listOf(
+                monthBack(year, month, 2),
+                monthBack(year, month, 1),
+                Pair(year, month)
+            )
+            val ym1 = yms[0].first * 100 + yms[0].second
+            val ym2 = yms[1].first * 100 + yms[1].second
+            val ym3 = yms[2].first * 100 + yms[2].second
+            val ymInSql = "(CAST(year AS INTEGER) * 100 + CAST(month AS INTEGER)) IN ($ym1, $ym2, $ym3)"
+
+            fun parseRecentMap(
+                rows: List<List<Any?>>,
+                keyFn: (List<Any?>) -> String,
+                yearIdx: Int,
+                monthIdx: Int,
+                valIdx: Int
+            ): Map<String, List<Double?>> {
+                val raw = HashMap<String, Array<Double?>>()
+                for (r in rows) {
+                    val k = keyFn(r)
+                    if (k.isEmpty()) continue
+                    val y = r[yearIdx]?.toString()?.toIntOrNull() ?: 0
+                    val m = r[monthIdx]?.toString()?.toIntOrNull() ?: 0
+                    val idx = yms.indexOfFirst { it.first == y && it.second == m }
+                    if (idx < 0) continue
+                    val arr = raw.getOrPut(k) { arrayOfNulls(3) }
+                    arr[idx] = num(r[valIdx])
+                }
+                return raw.mapValues { it.value.toList() }
+            }
+
             when (targetLevel) {
                 "BRANCH" -> {
                     // 用於 Flow B 第二層：在固定部別 (deptDiv) 下展開各院區
@@ -1097,18 +1130,38 @@ class DashboardRepo(private val db: HospitalDb) {
                         priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
                     } else emptyMap()
 
+                    val recentRows = db.query(
+                        "SELECT branch_name, year, month, ${spec.valExpr} FROM ${spec.table} " +
+                            "WHERE $ymInSql AND dept_div = ? " +
+                            "AND branch_name IS NOT NULL AND branch_name != '' GROUP BY branch_name, year, month",
+                        arrayOf<Any?>(deptDiv)
+                    )
+                    val recentMap = parseRecentMap(recentRows, { it[0]?.toString() ?: "" }, 1, 2, 3)
+
                     curRows.mapNotNull { r ->
                         val b = r[0]?.toString() ?: return@mapNotNull null
                         val v = num(r[1]) ?: 0.0
                         if (v <= 0.0) return@mapNotNull null
                         val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+
+                        val recent = recentMap[b] ?: emptyList()
+                        val trend = if (recent.isNotEmpty()) {
+                            listOf(recent.getOrNull(0), recent.getOrNull(1), recent.getOrNull(2) ?: v)
+                        } else {
+                            listOf(null, null, v)
+                        }
+                        val prev = trend[1]
+                        val trendDelta = if (prev != null && prev > 0.0 && v > 0.0) (v - prev) / prev * 100.0 else null
+
                         UniversalDrillStat(
                             name = b,
                             value = v,
                             secondaryValue = s,
                             secondaryLabel = spec.secLbl,
                             avgLabel = spec.avgLbl,
-                            prior = priorMap[b]
+                            prior = priorMap[b],
+                            recent3 = trend,
+                            recentDeltaPct = trendDelta
                         )
                     }.sortedByDescending { it.value }
                 }
@@ -1146,18 +1199,40 @@ class DashboardRepo(private val db: HospitalDb) {
                         priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
                     } else emptyMap()
 
+                    val recentParams = mutableListOf<Any?>()
+                    if (!isAllBranch) recentParams.add(cleanBranch)
+                    val recentRows = db.query(
+                        "SELECT dept_div, year, month, ${spec.valExpr} FROM ${spec.table} " +
+                            "WHERE $ymInSql $bCond " +
+                            "AND dept_div IS NOT NULL AND dept_div != '' GROUP BY dept_div, year, month",
+                        recentParams.toTypedArray()
+                    )
+                    val recentMap = parseRecentMap(recentRows, { it[0]?.toString() ?: "" }, 1, 2, 3)
+
                     curRows.mapNotNull { r ->
                         val div = r[0]?.toString() ?: return@mapNotNull null
                         val v = num(r[1]) ?: 0.0
                         if (v <= 0.0) return@mapNotNull null
                         val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+
+                        val recent = recentMap[div] ?: emptyList()
+                        val trend = if (recent.isNotEmpty()) {
+                            listOf(recent.getOrNull(0), recent.getOrNull(1), recent.getOrNull(2) ?: v)
+                        } else {
+                            listOf(null, null, v)
+                        }
+                        val prev = trend[1]
+                        val trendDelta = if (prev != null && prev > 0.0 && v > 0.0) (v - prev) / prev * 100.0 else null
+
                         UniversalDrillStat(
                             name = div,
                             value = v,
                             secondaryValue = s,
                             secondaryLabel = spec.secLbl,
                             avgLabel = spec.avgLbl,
-                            prior = priorMap[div]
+                            prior = priorMap[div],
+                            recent3 = trend,
+                            recentDeltaPct = trendDelta
                         )
                     }.sortedByDescending { it.value }
                 }
@@ -1201,18 +1276,41 @@ class DashboardRepo(private val db: HospitalDb) {
                         priorRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
                     } else emptyMap()
 
+                    val recentParams = mutableListOf<Any?>()
+                    if (!isAllBranch) recentParams.add(cleanBranch)
+                    if (!deptDiv.isNullOrEmpty()) recentParams.add(deptDiv)
+                    val recentRows = db.query(
+                        "SELECT dept, year, month, ${spec.valExpr} FROM ${spec.table} " +
+                            "WHERE $ymInSql $bCond $dCond " +
+                            "AND dept IS NOT NULL AND dept != '' GROUP BY dept, year, month",
+                        recentParams.toTypedArray()
+                    )
+                    val recentMap = parseRecentMap(recentRows, { it[0]?.toString() ?: "" }, 1, 2, 3)
+
                     curRows.mapNotNull { r ->
                         val d = r[0]?.toString() ?: return@mapNotNull null
                         val v = num(r[1]) ?: 0.0
                         if (v <= 0.0) return@mapNotNull null
                         val s = if (spec.secExpr != null) num(r[2]) ?: 0.0 else null
+
+                        val recent = recentMap[d] ?: emptyList()
+                        val trend = if (recent.isNotEmpty()) {
+                            listOf(recent.getOrNull(0), recent.getOrNull(1), recent.getOrNull(2) ?: v)
+                        } else {
+                            listOf(null, null, v)
+                        }
+                        val prev = trend[1]
+                        val trendDelta = if (prev != null && prev > 0.0 && v > 0.0) (v - prev) / prev * 100.0 else null
+
                         UniversalDrillStat(
                             name = d,
                             value = v,
                             secondaryValue = s,
                             secondaryLabel = spec.secLbl,
                             avgLabel = spec.avgLbl,
-                            prior = priorMap[d]
+                            prior = priorMap[d],
+                            recent3 = trend,
+                            recentDeltaPct = trendDelta
                         )
                     }.sortedByDescending { it.value }
                 }
@@ -1261,6 +1359,18 @@ class DashboardRepo(private val db: HospitalDb) {
                         }
                     } else emptyMap()
 
+                    val recentParams = mutableListOf<Any?>()
+                    if (!isAllBranch) recentParams.add(cleanBranch)
+                    if (!dept.isNullOrEmpty()) recentParams.add(dept)
+                    val recentRows = db.query(
+                        "SELECT branch_name, doctor_id, doctor_name, year, month, ${spec.valExpr} " +
+                            "FROM physician_service WHERE $ymInSql $bCond $dCond " +
+                            "AND doctor_name IS NOT NULL AND doctor_name != '' " +
+                            "GROUP BY branch_name, doctor_id, doctor_name, year, month",
+                        recentParams.toTypedArray()
+                    )
+                    val recentMap = parseRecentMap(recentRows, { "${it[0]}-${it[1]}-${it[2]}" }, 3, 4, 5)
+
                     curRows.mapNotNull { r ->
                         val b = r[0]?.toString() ?: ""
                         val id = r[1]?.toString() ?: ""
@@ -1269,6 +1379,16 @@ class DashboardRepo(private val db: HospitalDb) {
                         if (v <= 0.0) return@mapNotNull null
                         val s = if (spec.secExpr != null) num(r[4]) ?: 0.0 else null
                         val key = "$b-$id-$name"
+
+                        val recent = recentMap[key] ?: emptyList()
+                        val trend = if (recent.isNotEmpty()) {
+                            listOf(recent.getOrNull(0), recent.getOrNull(1), recent.getOrNull(2) ?: v)
+                        } else {
+                            listOf(null, null, v)
+                        }
+                        val prev = trend[1]
+                        val trendDelta = if (prev != null && prev > 0.0 && v > 0.0) (v - prev) / prev * 100.0 else null
+
                         UniversalDrillStat(
                             name = name,
                             extraId = id,
@@ -1277,7 +1397,9 @@ class DashboardRepo(private val db: HospitalDb) {
                             secondaryValue = s,
                             secondaryLabel = spec.secLbl,
                             avgLabel = spec.avgLbl,
-                            prior = priorMap[key]
+                            prior = priorMap[key],
+                            recent3 = trend,
+                            recentDeltaPct = trendDelta
                         )
                     }.sortedWith(compareByDescending<UniversalDrillStat> { it.value }.thenByDescending { it.secondaryValue ?: 0.0 })
                 }
@@ -1675,7 +1797,9 @@ class DashboardRepo(private val db: HospitalDb) {
         val nursingStation: String,
         val occupancyRate: Double?, // % e.g. 95.2, null if no valid occupancy rate recorded
         val openBeds: Double,
-        val registeredBeds: Double
+        val registeredBeds: Double,
+        val inpatientDays: Double = 0.0,
+        val openBedDays: Double = 0.0
     ) {
         val openRate: Double
             get() = if (registeredBeds > 0) (openBeds / registeredBeds * 100.0) else 0.0
@@ -1794,6 +1918,171 @@ class DashboardRepo(private val db: HospitalDb) {
                 occupancyRate = occ,
                 openBeds = open,
                 registeredBeds = reg
+            )
+        }
+    }
+
+    private fun tableExists(name: String): Boolean {
+        return try {
+            db.query(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                arrayOf<Any?>(name)
+            ).firstOrNull()?.getOrNull(0)?.toString()?.toIntOrNull()?.let { it > 0 } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** 篩選區間內差額病床資料的最新 (年, 月)。 */
+    fun diffBedLatestYm(f: Filters): Pair<Int, Int>? {
+        if (!tableExists("diff_bed_service")) return null
+        val parts = mutableListOf<String>()
+        val params = mutableListOf<Any?>()
+        if (f.years.isNotEmpty()) {
+            parts.add("year IN (${f.years.joinToString(",") { "?" }})")
+            params.addAll(f.years)
+        }
+        if (f.months.isNotEmpty()) {
+            parts.add("month IN (${f.months.joinToString(",") { "?" }})")
+            params.addAll(f.months)
+        }
+        val w = if (parts.isNotEmpty()) parts.joinToString(" AND ") else "1=1"
+        val r = db.query(
+            "SELECT year, month FROM diff_bed_service WHERE $w " +
+                "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1",
+            params.toTypedArray()
+        ).firstOrNull() ?: return null
+        val y = r[0]?.toString()?.toIntOrNull() ?: return null
+        val m = r[1]?.toString()?.toIntOrNull() ?: return null
+        return y to m
+    }
+
+    /** 差額病床各院區各類別實際佔床率（％）熱力圖資料：最新年月佔床率。以住院人日(K)除以實開床天數(Q)計算。 */
+    fun branchDiffBedCategoryHeatmaps(f: Filters): List<BranchBedCategoryHeatmap> {
+        if (!tableExists("diff_bed_service")) return emptyList()
+        val ym = diffBedLatestYm(f) ?: return emptyList()
+        val (y, m) = ym
+        val result = mutableListOf<BranchBedCategoryHeatmap>()
+
+        // 全院合計
+        if (f.showHospitalTotal) {
+            val totalRows = db.query(
+                "SELECT category, " +
+                    "SUM(CAST(inpatient_days AS REAL)), " +
+                    "SUM(CAST(open_bed_days AS REAL)) " +
+                    "FROM diff_bed_service " +
+                    "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' " +
+                    "GROUP BY category " +
+                    "HAVING (SUM(CAST(open_bed_days AS REAL)) > 0 OR SUM(CAST(inpatient_days AS REAL)) > 0)",
+                arrayOf<Any?>(y.toString(), m.toString())
+            )
+            val totalCats = totalRows.mapNotNull { r ->
+                val c = r[0]?.toString() ?: return@mapNotNull null
+                val k = num(r[1]) ?: 0.0
+                val q = num(r[2]) ?: 0.0
+                val rate = if (q > 0) (k / q * 100.0) else 0.0
+                c to rate
+            }.sortedByDescending { it.second }
+            if (totalCats.isNotEmpty()) {
+                result.add(BranchBedCategoryHeatmap("全院", ym, totalCats))
+            }
+        }
+
+        val branchFilter = if (f.branches.isNotEmpty()) {
+            "AND branch_name IN (${f.branches.joinToString(",") { "?" }})"
+        } else ""
+        val branchParams = if (f.branches.isNotEmpty()) {
+            arrayOf<Any?>(y.toString(), m.toString(), *f.branches.toTypedArray())
+        } else {
+            arrayOf<Any?>(y.toString(), m.toString())
+        }
+
+        val rows = db.query(
+            "SELECT branch_name, category, " +
+                "SUM(CAST(inpatient_days AS REAL)), " +
+                "SUM(CAST(open_bed_days AS REAL)) " +
+                "FROM diff_bed_service " +
+                "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' $branchFilter " +
+                "GROUP BY branch_name, category " +
+                "HAVING (SUM(CAST(open_bed_days AS REAL)) > 0 OR SUM(CAST(inpatient_days AS REAL)) > 0)",
+            branchParams
+        )
+
+        val byBranch = rows.groupBy { it[0]?.toString() ?: "" }
+        val sortedBranches = byBranch.keys.filter { it.isNotEmpty() }.sorted()
+        for (b in sortedBranches) {
+            val bRows = byBranch[b] ?: continue
+            val catList = bRows.mapNotNull { r ->
+                val c = r[1]?.toString() ?: return@mapNotNull null
+                val k = num(r[2]) ?: 0.0
+                val q = num(r[3]) ?: 0.0
+                val rate = if (q > 0) (k / q * 100.0) else 0.0
+                c to rate
+            }.sortedByDescending { it.second }
+            if (catList.isNotEmpty()) {
+                result.add(BranchBedCategoryHeatmap(b, ym, catList))
+            }
+        }
+
+        return result
+    }
+
+    /** 某院區差額病床某類別之各護理站佔床率明細（依佔床率由大到小排序）。若 branch 為 "全院"，則列出所有院區之該類別護理站。 */
+    fun diffBedCategoryStations(
+        branch: String,
+        category: String,
+        ym: Pair<Int, Int>? = null
+    ): List<BedStationOccDetail> {
+        if (!tableExists("diff_bed_service")) return emptyList()
+        val targetYm = ym ?: run {
+            val r = db.query(
+                "SELECT year, month FROM diff_bed_service ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1"
+            ).firstOrNull() ?: return emptyList()
+            val y = r[0]?.toString()?.toIntOrNull() ?: return emptyList()
+            val m = r[1]?.toString()?.toIntOrNull() ?: return emptyList()
+            y to m
+        }
+        val (y, m) = targetYm
+
+        val isAll = branch == "全院"
+        val branchCond = if (!isAll) "AND branch_name = ?" else ""
+        val params = if (!isAll) {
+            arrayOf<Any?>(y.toString(), m.toString(), category, branch)
+        } else {
+            arrayOf<Any?>(y.toString(), m.toString(), category)
+        }
+
+        val rows = db.query(
+            "SELECT branch_name, nursing_station_name, " +
+                "SUM(CAST(inpatient_days AS REAL)), " +
+                "SUM(CAST(open_bed_days AS REAL)), " +
+                "SUM(CAST(open_beds AS REAL)), " +
+                "SUM(CAST(registered_beds AS REAL)) " +
+                "FROM diff_bed_service " +
+                "WHERE year = ? AND month = ? AND category = ? " +
+                "AND nursing_station_name IS NOT NULL AND nursing_station_name != '' $branchCond " +
+                "GROUP BY branch_name, nursing_station_name " +
+                "HAVING (SUM(CAST(open_bed_days AS REAL)) > 0 OR SUM(CAST(inpatient_days AS REAL)) > 0) " +
+                "ORDER BY (CASE WHEN SUM(CAST(open_bed_days AS REAL)) > 0 THEN SUM(CAST(inpatient_days AS REAL)) / SUM(CAST(open_bed_days AS REAL)) ELSE 0 END) DESC, nursing_station_name ASC",
+            params
+        )
+
+        return rows.mapNotNull { r ->
+            val b = r[0]?.toString() ?: return@mapNotNull null
+            val st = r[1]?.toString() ?: return@mapNotNull null
+            val k = num(r[2]) ?: 0.0
+            val q = num(r[3]) ?: 0.0
+            val open = num(r[4]) ?: 0.0
+            val reg = num(r[5]) ?: 0.0
+            val occ = if (q > 0) (k / q * 100.0) else 0.0
+            BedStationOccDetail(
+                branch = b,
+                nursingStation = st,
+                occupancyRate = occ,
+                openBeds = open,
+                registeredBeds = reg,
+                inpatientDays = k,
+                openBedDays = q
             )
         }
     }

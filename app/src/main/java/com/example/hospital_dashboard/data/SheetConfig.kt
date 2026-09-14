@@ -118,6 +118,27 @@ object SheetConfigs {
                 if (ym != null) row + listOf((ym / 100).toString(), (ym % 100).toString())
                 else row + listOf(null, null)
             }
+        ),
+        // 差額病床業務資料(1150914 起新增)：B欄院區、E欄類別、K欄住院人日、Q欄實開床天數
+        SheetConfig(
+            sheet = "差額病床業務資料",
+            table = "diff_bed_service",
+            columns = listOf(
+                "ym", "branch_name", "nursing_station_code", "nursing_station_name",
+                "category", "bed_grade", "registered_beds", "open_beds",
+                "admission_count", "discharge_count", "inpatient_days", "discharge_days",
+                "year", "month", "days_in_month", "registered_bed_days",
+                "open_bed_days", "merged_branch_name"
+            ),
+            derive = { row ->
+                val ym = row.getOrNull(0)?.trim()?.toIntOrNull()
+                val y = row.getOrNull(12)?.trim()?.ifEmpty { null } ?: ym?.let { (it / 100).toString() }
+                val m = row.getOrNull(13)?.trim()?.ifEmpty { null } ?: ym?.let { (it % 100).toString() }
+                val mutable = row.toMutableList()
+                if (mutable.size > 12) mutable[12] = y
+                if (mutable.size > 13) mutable[13] = m
+                mutable
+            }
         )
     )
 
