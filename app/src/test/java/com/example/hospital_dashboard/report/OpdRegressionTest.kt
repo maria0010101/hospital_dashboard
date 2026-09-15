@@ -1,7 +1,9 @@
 package com.example.hospital_dashboard.report
 
+import com.example.hospital_dashboard.DashboardViewModel
 import com.example.hospital_dashboard.data.BarSegment
 import com.example.hospital_dashboard.data.DashboardRepo
+import com.example.hospital_dashboard.data.Fmt
 import com.example.hospital_dashboard.data.HBarData
 import com.example.hospital_dashboard.data.HBarRow
 import com.example.hospital_dashboard.data.LineChartData
@@ -376,6 +378,41 @@ class OpdRegressionTest {
         assertNotNull(stat.recentDeltaPct)
         assertEquals(-11.11, stat.recentDeltaPct!!, 0.01)
     }
+
+    @Test
+    fun testDefaultYearsExcludes113AndIncludes114115() {
+        // 驗證預設篩選年度排除 113 年，範圍為 114、115 年
+        val years3 = listOf("113", "114", "115")
+        val defaultYears = DashboardViewModel.resolveDefaultYears(years3)
+        assertEquals(listOf("114", "115"), defaultYears)
+        assertFalse("預設篩選不可包含 113", defaultYears.contains("113"))
+        assertTrue("預設篩選須包含 114", defaultYears.contains("114"))
+        assertTrue("預設篩選須包含 115", defaultYears.contains("115"))
+
+        // 僅有 114、115 時
+        val years2 = listOf("114", "115")
+        assertEquals(listOf("114", "115"), DashboardViewModel.resolveDefaultYears(years2))
+
+        // 包含其他年份時，113 亦須被排除
+        val years4 = listOf("113", "114", "115", "116")
+        assertEquals(listOf("114", "115"), DashboardViewModel.resolveDefaultYears(years4))
+    }
+
+    @Test
+    fun testBranchSummaryOpdFormatFullNumber() {
+        // 驗證各院區明細之門診人次以完整數據呈現，不以萬人為單位
+        val opdCount = 40123.0
+        val priorCount = 38012.0
+
+        val formattedCur = Fmt.int(opdCount)
+        val formattedPrior = Fmt.int(priorCount)
+
+        assertEquals("40,123", formattedCur)
+        assertEquals("38,012", formattedPrior)
+        assertFalse("門診人次不應包含「萬」", formattedCur.contains("萬"))
+        assertFalse("門診人次去年同期不應包含「萬」", formattedPrior.contains("萬"))
+    }
 }
+
 
 

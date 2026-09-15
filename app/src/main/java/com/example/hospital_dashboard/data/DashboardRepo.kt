@@ -160,7 +160,7 @@ class DashboardRepo(private val db: HospitalDb) {
             ) ?: 0.0
         val occ = (db.queryDouble(
             """SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service
-               WHERE (major_category IS NULL OR major_category != '其他')
+               WHERE $BED_OCC_EXCLUDE_MAJOR_SQL
                  AND actual_occupancy_rate IS NOT NULL
                  AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?""",
             arrayOf(year, month)
@@ -223,7 +223,7 @@ class DashboardRepo(private val db: HospitalDb) {
         )
         val bedRows = db.query(
             """SELECT branch_name, ${avgCast("actual_occupancy_rate")} FROM bed_type_service
-               WHERE (major_category IS NULL OR major_category != '其他')
+               WHERE $BED_OCC_EXCLUDE_MAJOR_SQL
                  AND actual_occupancy_rate IS NOT NULL
                  AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?
                GROUP BY branch_name""",
@@ -259,7 +259,7 @@ class DashboardRepo(private val db: HospitalDb) {
             db.queryDouble("SELECT SUM(CAST($col AS REAL)) FROM $t WHERE $w", p) ?: 0.0
         val occ = (db.queryDouble(
             """SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service
-               WHERE (major_category IS NULL OR major_category != '其他')
+               WHERE $BED_OCC_EXCLUDE_MAJOR_SQL
                  AND actual_occupancy_rate IS NOT NULL
                  AND CAST(actual_occupancy_rate AS REAL) > 0 AND $wN""", pN
         ) ?: 0.0) * 100.0
@@ -1456,7 +1456,7 @@ class DashboardRepo(private val db: HospitalDb) {
         val (w, p) = whereFor(f, false, 0)
         if (w.isEmpty()) return emptyList()
         val rows = db.query(
-            "SELECT DISTINCT CASE WHEN major_category = '產後（小孩）' THEN '其他' ELSE major_category END " +
+            "SELECT DISTINCT CASE WHEN TRIM(major_category) IN ('產後（小孩）', '產後(小孩)') THEN '其他' ELSE major_category END " +
                 "FROM bed_type_service WHERE $w AND major_category IS NOT NULL", p
         )
         val raw = rows.mapNotNull { it[0]?.toString() }.filter { it.isNotEmpty() }.distinct()
@@ -1481,7 +1481,7 @@ class DashboardRepo(private val db: HospitalDb) {
         if (cats.isEmpty()) return "" to emptyArray()
         // 病床分頁篩選改以「大類別(major_category)」為單位，產後（小孩）與其他合併
         val expanded = cats.flatMap {
-            if (it == "其他") listOf("其他", "產後（小孩）") else listOf(it)
+            if (it == "其他") listOf("其他", "產後（小孩）", "產後(小孩)") else listOf(it)
         }.distinct()
         return "major_category IN (${expanded.joinToString(",") { "?" }})" to expanded.toTypedArray()
     }
@@ -3341,7 +3341,7 @@ class DashboardRepo(private val db: HospitalDb) {
         // 平均實際佔床率
         val occ = row(
             "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
-                "FROM bed_type_service WHERE branch_name=? AND year=? AND month=?",
+                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL AND year=? AND month=?",
             branch, ys, ms)
         // 收入結構
         val inc = row(
@@ -3360,7 +3360,7 @@ class DashboardRepo(private val db: HospitalDb) {
             branch, py, ms)
         val occP = row(
             "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
-                "FROM bed_type_service WHERE branch_name=? AND year=? AND month=?",
+                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL AND year=? AND month=?",
             branch, py, ms)
 
         val kpis = mutableListOf<Triple<String, Double, Double?>>()
@@ -3449,6 +3449,10 @@ class DashboardRepo(private val db: HospitalDb) {
     fun occupancyColor(pct: Double): Long = Companion.occupancyColor(pct)
 
     companion object {
+        /** 佔床率計算排除非急性病床大類別：排除「其他」與「產後（小孩）」(含全形/半形括號)。 */
+        const val BED_OCC_EXCLUDE_MAJOR_SQL =
+            "(major_category IS NULL OR (TRIM(major_category) != '其他' AND TRIM(major_category) NOT IN ('產後（小孩）', '產後(小孩)') AND TRIM(major_category) NOT LIKE '產後%'))"
+
         fun occupancyColor(pct: Double): Long {
             val t = pct.coerceIn(0.0, 100.0) / 100.0
             // RdYlGn 節點: 0=(215,48,39) 50=(254,240,144) 100=(26,152,80)

@@ -8,6 +8,7 @@ import com.example.hospital_dashboard.ui.charts.BRANCH_COLORS
 import com.example.hospital_dashboard.ui.charts.HBarClick
 import com.example.hospital_dashboard.ui.charts.seriesColor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -213,5 +214,63 @@ class BedOtherRegressionTest {
         assertEquals(74.0, detail.inpatientDays, 0.01)
         assertEquals(62.0, detail.openBedDays, 0.01)
         assertEquals(66.67, detail.openRate, 0.01)
+    }
+
+    @Test
+    fun testBedOccExcludeMajorSqlExcludesOtherAndPostpartum() {
+        val sql = DashboardRepo.BED_OCC_EXCLUDE_MAJOR_SQL
+        assertTrue(sql.contains("TRIM(major_category) != '其他'"))
+        assertTrue(sql.contains("產後（小孩）"))
+        assertTrue(sql.contains("產後(小孩)"))
+        assertTrue(sql.contains("TRIM(major_category) NOT LIKE '產後%'"))
+
+        // 模擬判定邏輯，驗證各類別是否正確被排除或保留
+        fun shouldInclude(major: String?): Boolean {
+            if (major == null) return true
+            val trimmed = major.trim()
+            if (trimmed == "其他") return false
+            if (trimmed in listOf("產後（小孩）", "產後(小孩)")) return false
+            if (trimmed.startsWith("產後")) return false
+            return true
+        }
+
+        // 應排除
+        assertFalse(shouldInclude("其他"))
+        assertFalse(shouldInclude(" 產後（小孩） "))
+        assertFalse(shouldInclude("產後(小孩)"))
+        assertFalse(shouldInclude("產後護理之家"))
+
+        // 應保留
+        assertTrue(shouldInclude("一般"))
+        assertTrue(shouldInclude("ICU"))
+        assertTrue(shouldInclude("特殊"))
+        assertTrue(shouldInclude("嬰兒床"))
+        assertTrue(shouldInclude(null))
+    }
+
+    @Test
+    fun testBranchAverageOccExcludesPostpartumSimulation() {
+        // 模擬 115年8月中興院區佔床率數據
+        // 假設有一般病床 (60.0%, 70.0%) 與產後(小孩)病床 (79.117%)
+        val rowsWithPostpartum = listOf(
+            Triple("一般", 0.60, "7A病房"),
+            Triple("一般", 0.70, "8A病房"),
+            Triple("產後(小孩)", 0.79117, "產後護理之家")
+        )
+
+        fun calcAvgOcc(rows: List<Triple<String, Double, String>>, excludePostpartum: Boolean): Double {
+            val filtered = rows.filter { (major, _, _) ->
+                if (major == "其他") false
+                else if (excludePostpartum && major.startsWith("產後")) false
+                else true
+            }
+            return (filtered.map { it.second }.average()) * 100.0
+        }
+
+        val occWithPostpartum = calcAvgOcc(rowsWithPostpartum, excludePostpartum = false)
+        val occExcludedPostpartum = calcAvgOcc(rowsWithPostpartum, excludePostpartum = true)
+
+        assertEquals(69.705, occWithPostpartum, 0.01)
+        assertEquals(65.0, occExcludedPostpartum, 0.01)
     }
 }

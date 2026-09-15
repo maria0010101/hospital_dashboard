@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android
 
-[![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.1)
+[![Version](https://img.shields.io/badge/version-0.6.2-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.2)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
@@ -9,10 +9,10 @@
 
 ---
 
-## 📥 最新安裝檔下載 (v0.6.1)
+## 📥 最新安裝檔下載 (v0.6.2)
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.6.1.apk`](release/hospital_dashboard_v0.6.1.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.1)
+- **專案內建載點**：[`release/hospital_dashboard_v0.6.2.apk`](release/hospital_dashboard_v0.6.2.apk)
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.2)
 
 ---
 
@@ -117,7 +117,22 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.6.1 (Latest)**
+### **v0.6.2 (Latest)**
+- **各院區明細門診人次完整數據呈現**：
+  - 點擊頂部「🔍 各院區明細」展開之各院區營運概況卡片（`BranchSummarySheet`），門診人次由原本以「萬人」為單位的壓縮數字（如 `4.0萬`）改為呈現詳細完整人次（`Fmt::int`，如 `39,635`），與實際就診統計數據精確對齊。
+- **預設篩選年度範圍優化（排除 113 年，鎖定 114、115 年）**：
+  - 更新 `DashboardViewModel.resolveDefaultYears` 與篩選面板重設邏輯，預設篩選年度自動排除 113 年，預設選取 114 年與 115 年；若資料庫無 114/115 年則動態取最新 2 年，貼合目前醫院營運主力分析年度需求。
+- **各院區平均佔床率計算邏輯排除大類別「其他」與「產後（小孩）」**：
+  - 在 `DashboardRepo` 定義統一排除條件常量 `BED_OCC_EXCLUDE_MAJOR_SQL`：
+    `WHERE (major_category IS NULL OR (TRIM(major_category) != '其他' AND TRIM(major_category) NOT IN ('產後（小孩）', '產後(小孩)') AND TRIM(major_category) NOT LIKE '產後%'))`
+  - 各院區平均佔床率統一採用「實際佔床率」（`actual_occupancy_rate`）計算，嚴格排除大類別為「其他」及「產後（小孩）」/「產後(小孩)」之非急性病床資料，完整支援半形與全形括號相容比對。
+  - 同步統一各院區明細（`monthBranchMap`）、單月 KPI 查詢（`kpiForMonth`）、全域 KPI 查詢（`kpiSet`）與單院區營運摘要（`branchAnalysisSummary`）之佔床率計算口徑。
+- **機敏資料安全防護隔離**：
+  - 恪守機敏營運資料隔離原則，`.gitignore` 嚴格規範排除任何 `*.xlsx` 與 `*.db` 等實體營運資料檔案，專案僅提交核心原始碼與編譯完成之 APK 檔案。
+
+---
+
+### **v0.6.1**
 - **差額病床業務資料匯入與差額病床熱力圖**：
   - 新增「差額病床業務資料」工作表解析與資料庫儲存（資料表 `bed_differential_service`），包含院區、類別、護理站、住院人日、實開床天數等欄位。
   - 在「病床利用」分頁下方新增「差額病床熱力圖」，以各院區各類別差額病床佔床率繪製（公式：`住院人日 / 實開床天數 × 100%`）。
@@ -221,7 +236,7 @@ flowchart LR
 
 # 編譯 Release APK（已內建 debug keystore 簽章，開箱即裝）
 ./gradlew assembleRelease
-# 產出檔案位置：release/hospital_dashboard_v0.6.1.apk
+# 產出檔案位置：release/hospital_dashboard_v0.6.2.apk
 ```
 
 ---

@@ -245,7 +245,7 @@ private fun BranchStatCard(s: DashboardRepo.BranchMonthStat) {
             Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(2.dp))
-            MetricLine("門診人次", s.opd, s.opdPrior, Fmt::compact)
+            MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
             MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
             MetricLine("住院人次", s.ipdAdm, s.ipdAdmPrior, Fmt::compact)
             MetricLine("住院人日", s.ipdDays, s.ipdDaysPrior, Fmt::compact)
@@ -558,7 +558,7 @@ private fun FilterSheet(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
                     onClick = {
-                        years = yearOpts.takeLast(3) // 預設最近 3 年
+                        years = vm.defaultYears(yearOpts) // 預設排除 113，取 114、115
                         monthsAll = true; months = emptyList()
                         branchesAll = true; branches = emptyList()
                         divsAll = true; divs = emptyList()

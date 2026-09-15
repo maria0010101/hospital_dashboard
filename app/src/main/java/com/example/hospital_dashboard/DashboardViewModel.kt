@@ -70,7 +70,19 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         val FONT_SCALE_MULTIPLIERS = listOf(1.00f, 1.10f, 1.20f, 1.30f, 1.40f)
         val FONT_SCALE_NAMES = listOf("最小 (目前)", "較小", "標準", "較大", "最大")
+
+        /** 預設篩選年度：排除 113 年，預設為 114、115 年。 */
+        fun resolveDefaultYears(allYears: List<String>): List<String> {
+            val non113 = allYears.filter { it != "113" }
+            val target = non113.filter { it == "114" || it == "115" }
+            return if (target.isNotEmpty()) target
+            else if (non113.isNotEmpty()) non113.takeLast(2)
+            else allYears.takeLast(2)
+        }
     }
+
+    fun defaultYears(allYears: List<String> = availableYears()): List<String> =
+        resolveDefaultYears(allYears)
 
     init {
         com.example.hospital_dashboard.report.registry.ReportRegistry.initDefaultReports()
@@ -85,9 +97,9 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         if (db.hasImportedData()) {
-            // App 重啟後 ViewModel 重建：若無篩選條件，預設最近 3 年
+            // App 重啟後 ViewModel 重建：若無篩選條件，預設排除 113，取 114、115
             if (filters.value.years.isEmpty()) {
-                filters.value = DashboardRepo.Filters(years = availableYears().takeLast(3))
+                filters.value = DashboardRepo.Filters(years = defaultYears())
             }
             _uiState.value = UiState.Ready(
                 updateDate = db.getMeta("update_date"),
@@ -128,9 +140,9 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
-                // 預設篩選：最近 3 年
+                // 預設篩選：排除 113，預設 114、115
                 val years = availableYears()
-                filters.value = DashboardRepo.Filters(years = years.takeLast(3))
+                filters.value = DashboardRepo.Filters(years = defaultYears(years))
                 _uiState.value = UiState.Ready(date?.display, name, db.tableRowCounts())
             } catch (e: Exception) {
                 _uiState.value = UiState.ImportError(e.message ?: "匯入失敗")
