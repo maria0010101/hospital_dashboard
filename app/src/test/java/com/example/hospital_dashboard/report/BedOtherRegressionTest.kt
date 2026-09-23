@@ -273,4 +273,41 @@ class BedOtherRegressionTest {
         assertEquals(69.705, occWithPostpartum, 0.01)
         assertEquals(65.0, occExcludedPostpartum, 0.01)
     }
+
+    @Test
+    fun testBedOccSqlGeneratedStatements() {
+        val actualOccSql = DashboardRepo.bedActualOccSql()
+        assertEquals("SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(actual_bed_days AS REAL)), 0)", actualOccSql)
+
+        val regOccSql = DashboardRepo.bedRegOccSql()
+        assertEquals("SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(registered_bed_days AS REAL)), 0)", regOccSql)
+    }
+
+    @Test
+    fun testBedCategoryOccupancyWeightedFormula() {
+        // 驗證加權佔床率（住院人日合計 / 實際床日數合計）與簡單平均（所有護理站站床率平均）之差異
+        // 模擬「加護病床」類別下兩護理站：
+        // 護理站 A（小型）：實際床日 50，住院人日 10 -> 站床率 20.0%
+        // 護理站 B（大型）：實際床日 950，住院人日 850 -> 站床率 89.47%
+        val stations = listOf(
+            Triple("ICU-A", 10.0, 50.0),   // 佔床率 20%
+            Triple("ICU-B", 850.0, 950.0)  // 佔床率 89.47%
+        )
+
+        // 舊計算邏輯：各護理站站床率之平均
+        val oldAvg = stations.map { it.second / it.third * 100.0 }.average()
+        // 新計算邏輯：該類別下所有護理站的住院人日合計除以實際床日數合計
+        val totalAdmDays = stations.sumOf { it.second }
+        val totalBedDays = stations.sumOf { it.third }
+        val newWeighted = (totalAdmDays / totalBedDays) * 100.0
+
+        // 舊邏輯平均值為 (20% + 89.4737%) / 2 = 54.7368%
+        assertEquals(54.7368, oldAvg, 0.001)
+        // 正確加權值為 860 / 1000 * 100% = 86.0%
+        assertEquals(86.0, newWeighted, 0.001)
+
+        // 驗證加權佔床率真實反映病床利用現況，不因小型護理站低佔床率而大幅拉低整體數值
+        assertTrue(newWeighted > oldAvg)
+    }
 }
+

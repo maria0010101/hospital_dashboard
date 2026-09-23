@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android
 
-[![Version](https://img.shields.io/badge/version-0.6.2-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.2)
+[![Version](https://img.shields.io/badge/version-0.6.3-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.3)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
@@ -9,10 +9,10 @@
 
 ---
 
-## 📥 最新安裝檔下載 (v0.6.2)
+## 📥 最新安裝檔下載 (v0.6.3)
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.6.2.apk`](release/hospital_dashboard_v0.6.2.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.2)
+- **專案內建載點**：[`release/hospital_dashboard_v0.6.3.apk`](release/hospital_dashboard_v0.6.3.apk)
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.3)
 
 ---
 
@@ -117,7 +117,21 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.6.2 (Latest)**
+### **v0.6.3 (Latest)**
+- **病床分頁病床類別佔床率計算邏輯修正（由簡單平均改為住院人日/實際床日加權計算）**：
+  - 修正前：病床類別佔床率採用該類別下所有護理站佔床率的簡單平均（`AVG(CAST(actual_occupancy_rate AS REAL))`），容易因床數極少之小型護理站低佔床率而大幅拉低整體類別數值（例如加護病床僅顯示 44.5%）。
+  - 修正後：依醫療統計業務定義，全面改為該類別下所有護理站的「**住院人日合計除以實際床日數合計**」（`SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(actual_bed_days AS REAL)), 0)`），登記佔床率同步對應採用 `住院人日合計 / 登記床日數合計`。
+  - 涵蓋範圍：
+    1. 實際佔床率月趨勢（依病床類別，折線圖及 YoY 同期比較）
+    2. 各病床類別實際佔床率（單月重疊橫條圖）
+    3. 各院區病床類別實際佔床率（％）熱力圖卡片（包含全院與各院區）
+    4. 依院區實際床佔床率月趨勢與單月橫條圖
+    5. 護理站佔床率明細底層彈窗與病床類別各院區明細卡
+  - 新增加權計算與 SQL 表達式之單元回歸測試，確保極端床數分佈與零床日邊界值運算穩健。
+
+---
+
+### **v0.6.2**
 - **各院區明細門診人次完整數據呈現**：
   - 點擊頂部「🔍 各院區明細」展開之各院區營運概況卡片（`BranchSummarySheet`），門診人次由原本以「萬人」為單位的壓縮數字（如 `4.0萬`）改為呈現詳細完整人次（`Fmt::int`，如 `39,635`），與實際就診統計數據精確對齊。
 - **預設篩選年度範圍優化（排除 113 年，鎖定 114、115 年）**：

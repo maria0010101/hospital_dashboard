@@ -63,6 +63,7 @@ class DashboardRepo(private val db: HospitalDb) {
     private fun avgCast(col: String): String =
         "AVG(CASE WHEN ${numGuard(col)} THEN CAST($col AS REAL) END)"
 
+
     private fun ymSort(y: Any?, m: Any?): Int =
         (y?.toString()?.toIntOrNull() ?: 0) * 100 + (m?.toString()?.toIntOrNull() ?: 0)
 
@@ -1522,8 +1523,8 @@ class DashboardRepo(private val db: HospitalDb) {
         val where = if (cc.isEmpty()) w else "$w AND $cc"
         val params = arrayOf(*p, *cp)
         return """SELECT year, month, category,
-            ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)),
-            ${avgCast("registered_occupancy_rate")}
+            ${bedActualOccSql()}, SUM(CAST(actual_open_beds AS REAL)),
+            ${bedRegOccSql()}
             FROM bed_type_service WHERE $where GROUP BY year, month, category""" to params
     }
 
@@ -1548,7 +1549,7 @@ class DashboardRepo(private val db: HospitalDb) {
         val (cc, cp) = catCond(cats)
         val where = if (cc.isEmpty()) w else "$w AND $cc"
         val curRows = db.query(
-            "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+            "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                 "WHERE $where AND category IS NOT NULL AND category != '' GROUP BY category",
             arrayOf(*p, *cp)
         )
@@ -1559,7 +1560,7 @@ class DashboardRepo(private val db: HospitalDb) {
             val (wy, py) = whereFor(f, false, -1)
             val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
             val yRows = db.query(
-                "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE $whereY AND category IS NOT NULL AND category != '' GROUP BY category",
                 arrayOf(*py, *cp)
             )
@@ -1654,13 +1655,13 @@ class DashboardRepo(private val db: HospitalDb) {
         val branchCol = if (f.showHospitalTotal) "'全院' AS branch_name" else "branch_name"
         val groupCols = if (f.showHospitalTotal) "year, month" else "year, month, branch_name"
         val sql = """SELECT year, month, $branchCol,
-            ${avgCast("actual_occupancy_rate")}
+            ${bedActualOccSql()}
             FROM bed_type_service WHERE $where GROUP BY $groupCols"""
         val yoySql = if (f.showYoy) {
             val (wy, _) = whereFor(f, false, -1)
             val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
             """SELECT year, month, $branchCol,
-                ${avgCast("actual_occupancy_rate")}
+                ${bedActualOccSql()}
                 FROM bed_type_service WHERE $whereY GROUP BY $groupCols"""
         } else null
         val yoyParams = if (f.showYoy) {
@@ -1681,7 +1682,7 @@ class DashboardRepo(private val db: HospitalDb) {
         val where = if (cc.isEmpty()) w else "$w AND $cc"
         val whereClause = if (!isBranchTotal) "$where AND branch_name IS NOT NULL AND branch_name != ''" else where
         val curRows = db.query(
-            "SELECT $selBranch, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+            "SELECT $selBranch, ${bedActualOccSql()} FROM bed_type_service " +
                 "WHERE $whereClause $grpBranch",
             arrayOf(*p, *cp)
         )
@@ -1693,7 +1694,7 @@ class DashboardRepo(private val db: HospitalDb) {
             val whereY = if (cc.isEmpty()) wy else "$wy AND $cc"
             val whereYClause = if (!isBranchTotal) "$whereY AND branch_name IS NOT NULL AND branch_name != ''" else whereY
             val yRows = db.query(
-                "SELECT $selBranch, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT $selBranch, ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE $whereYClause $grpBranch",
                 arrayOf(*py, *cp)
             )
@@ -1823,7 +1824,7 @@ class DashboardRepo(private val db: HospitalDb) {
 
         if (f.showHospitalTotal) {
             val totalRows = db.query(
-                "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' $otherFilter $catFilter " +
                     "GROUP BY category",
                 arrayOf(y.toString(), m.toString(), *cp)
@@ -1848,7 +1849,7 @@ class DashboardRepo(private val db: HospitalDb) {
         }
 
         val rows = db.query(
-            "SELECT branch_name, category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+            "SELECT branch_name, category, ${bedActualOccSql()} FROM bed_type_service " +
                 "WHERE year=? AND month=? AND category IS NOT NULL AND category != '' $otherFilter $catFilter $branchFilter " +
                 "GROUP BY branch_name, category",
             branchParams
@@ -1896,13 +1897,13 @@ class DashboardRepo(private val db: HospitalDb) {
         }
 
         val rows = db.query(
-            "SELECT branch_name, nursing_station, ${avgCast("actual_occupancy_rate")}, " +
+            "SELECT branch_name, nursing_station, ${bedActualOccSql()}, " +
                 "SUM(CAST(actual_open_beds AS REAL)), SUM(CAST(registered_beds AS REAL)) " +
                 "FROM bed_type_service " +
                 "WHERE year = ? AND month = ? AND category = ? " +
                 "AND nursing_station IS NOT NULL AND nursing_station != '' $branchCond " +
                 "GROUP BY branch_name, nursing_station " +
-                "ORDER BY ${avgCast("actual_occupancy_rate")} DESC, nursing_station ASC",
+                "ORDER BY ${bedActualOccSql()} DESC, nursing_station ASC",
             params
         )
 
@@ -2096,7 +2097,7 @@ class DashboardRepo(private val db: HospitalDb) {
         if (yc.isNotEmpty()) where += " AND $yc"
         val params = arrayOf(*p, *cp, *yp)
         val rows = db.query(
-            "SELECT branch_name, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
+            "SELECT branch_name, ${bedActualOccSql()}, SUM(CAST(actual_open_beds AS REAL)) " +
                 "FROM bed_type_service WHERE $where GROUP BY branch_name", params)
         val items = rows.mapNotNull { r ->
             val occ = num(r[1])?.times(100.0) ?: 0.0
@@ -2151,7 +2152,7 @@ class DashboardRepo(private val db: HospitalDb) {
     fun bedStationOcc(f: Filters, cats: List<String>, ns: List<String>): HBarData {
         val (where, params) = bedNsSql(f, cats, ns)
         val rows = db.query(
-            "SELECT nursing_station, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
+            "SELECT nursing_station, ${bedActualOccSql()}, SUM(CAST(actual_open_beds AS REAL)) " +
                 "FROM bed_type_service WHERE $where GROUP BY nursing_station", params)
         val items = rows.mapNotNull { r ->
             val occ = num(r[1])?.times(100.0) ?: 0.0
@@ -2195,7 +2196,7 @@ class DashboardRepo(private val db: HospitalDb) {
         }
         val idxCol = if (byStation) "nursing_station" else "branch_name"
         val rows = db.query(
-            "SELECT $idxCol, category, ${avgCast("actual_occupancy_rate")} " +
+            "SELECT $idxCol, category, ${bedActualOccSql()} " +
                 "FROM bed_type_service WHERE $where GROUP BY $idxCol, category", params.toTypedArray())
 
         val catsSorted = rows.map { it[1]?.toString() ?: "" }.distinct().sorted()
@@ -2226,7 +2227,7 @@ class DashboardRepo(private val db: HospitalDb) {
         if (yc.isNotEmpty()) wc += " AND $yc"
         val params = arrayOf(*p, *cp, *yp)
         val cur = db.query(
-            "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+            "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                 "WHERE $wc GROUP BY category", params)
         // 去年同月(僅在最新年月模式下才有明確單月)；累計模式沿用去年同區間
         val prev = if (latestOnly) {
@@ -2235,14 +2236,14 @@ class DashboardRepo(private val db: HospitalDb) {
                 val (y, m) = lm
                 val (wpp, ppp) = whereFor(f, false, -1)
                 if (wpp.isEmpty()) emptyList() else db.query(
-                    "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                    "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                         "WHERE $wpp${if (cc.isEmpty()) "" else " AND $cc"} AND year=? AND month=? GROUP BY category",
                     arrayOf(*ppp, *cp, (y - 1).toString(), m.toString()))
             }
         } else {
             val (wy, py) = whereFor(f, false, -1)
             if (wy.isEmpty()) emptyList() else db.query(
-                "SELECT category, ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT category, ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE $wy${if (cc.isEmpty()) "" else " AND $cc"} GROUP BY category", arrayOf(*py, *cp))
         }
         val prevMap = prev.associate { (it[0]?.toString() ?: "") to (num(it[1])?.times(100.0) ?: 0.0) }
@@ -2753,7 +2754,7 @@ class DashboardRepo(private val db: HospitalDb) {
                COALESCE(category,'未分類'), COALESCE(nursing_station,'未分類'),
                SUM(CAST(registered_beds AS REAL)), SUM(CAST(actual_open_beds AS REAL)),
                SUM(CAST(admission_days AS REAL)),
-               ${avgCast("registered_occupancy_rate")}, ${avgCast("actual_occupancy_rate")}
+               ${bedRegOccSql()}, ${bedActualOccSql()}
                FROM bed_type_service WHERE $where
                GROUP BY branch_name, major_category, category, nursing_station""", params)
         val yoy = bedDetailYoy(f, latestOnly)
@@ -2790,7 +2791,7 @@ class DashboardRepo(private val db: HospitalDb) {
         val rows = db.query(
             """SELECT COALESCE(branch_name,'未分類'), COALESCE(major_category,'未分類'),
                COALESCE(category,'未分類'), COALESCE(nursing_station,'未分類'),
-               ${avgCast("registered_occupancy_rate")}, ${avgCast("actual_occupancy_rate")}
+               ${bedRegOccSql()}, ${bedActualOccSql()}
                FROM bed_type_service WHERE $where
                GROUP BY branch_name, major_category, category, nursing_station""",
             arrayOf(*p, *yp))
@@ -2813,7 +2814,7 @@ class DashboardRepo(private val db: HospitalDb) {
         if (where.isNotEmpty()) where += " AND branch_name=?" else where = "branch_name=?"
         val params = arrayOf(*p, *cp, branch)
         val rows = db.query(
-            "SELECT year, month, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
+            "SELECT year, month, ${bedActualOccSql()}, SUM(CAST(actual_open_beds AS REAL)) " +
                 "FROM bed_type_service WHERE $where GROUP BY year, month " +
                 "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT ?",
             arrayOf(*params, k.toString()))
@@ -2830,7 +2831,7 @@ class DashboardRepo(private val db: HospitalDb) {
             val m = r[1]?.toString()?.toIntOrNull() ?: return@let null
             val (wy, wpp) = whereFor(f, false, -1)
             if (wy.isEmpty()) null else db.query(
-                "SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE $wy${if (cc.isEmpty()) "" else " AND $cc"} AND branch_name=? AND year=? AND month=?",
                 arrayOf(*wpp, *cp, branch, (y - 1).toString(), m.toString()))
                     .firstOrNull()?.let { q -> num(q[0])?.times(100.0) }
@@ -2853,7 +2854,7 @@ class DashboardRepo(private val db: HospitalDb) {
             arrayOf(*p, category)).map { it[0]?.toString() ?: "" }.filter { it.isNotEmpty() }
         return branches.mapNotNull { b ->
             val cur = db.query(
-                "SELECT year, month, ${avgCast("actual_occupancy_rate")}, SUM(CAST(actual_open_beds AS REAL)) " +
+                "SELECT year, month, ${bedActualOccSql()}, SUM(CAST(actual_open_beds AS REAL)) " +
                     "FROM bed_type_service WHERE $w AND category=? AND branch_name=? GROUP BY year, month " +
                     "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 3",
                 arrayOf(*p, category, b))
@@ -2868,7 +2869,7 @@ class DashboardRepo(private val db: HospitalDb) {
             val lm = latest[1]?.toString()?.toIntOrNull() ?: return@mapNotNull null
             val (wp, pp) = whereFor(f, false, -1)
             val prior = if (wp.isEmpty()) null else db.query(
-                "SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service " +
+                "SELECT ${bedActualOccSql()} FROM bed_type_service " +
                     "WHERE $wp AND category=? AND branch_name=? AND year=? AND month=?",
                 arrayOf(*pp, category, b, (ly - 1).toString(), lm.toString()))
                 .firstOrNull()?.let { q -> num(q[0])?.times(100.0) }
@@ -3452,6 +3453,14 @@ class DashboardRepo(private val db: HospitalDb) {
         /** 佔床率計算排除非急性病床大類別：排除「其他」與「產後（小孩）」(含全形/半形括號)。 */
         const val BED_OCC_EXCLUDE_MAJOR_SQL =
             "(major_category IS NULL OR (TRIM(major_category) != '其他' AND TRIM(major_category) NOT IN ('產後（小孩）', '產後(小孩)') AND TRIM(major_category) NOT LIKE '產後%'))"
+
+        /** 病床實際佔床率 SQL 表達式：住院人日合計 / 實際床日數合計（避免站床率簡單平均導致失真） */
+        fun bedActualOccSql(admCol: String = "admission_days", bedCol: String = "actual_bed_days"): String =
+            "SUM(CAST($admCol AS REAL)) / NULLIF(SUM(CAST($bedCol AS REAL)), 0)"
+
+        /** 病床登記佔床率 SQL 表達式：住院人日合計 / 登記床日數合計 */
+        fun bedRegOccSql(admCol: String = "admission_days", bedCol: String = "registered_bed_days"): String =
+            "SUM(CAST($admCol AS REAL)) / NULLIF(SUM(CAST($bedCol AS REAL)), 0)"
 
         fun occupancyColor(pct: Double): Long {
             val t = pct.coerceIn(0.0, 100.0) / 100.0
