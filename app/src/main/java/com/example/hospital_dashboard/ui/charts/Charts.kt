@@ -229,23 +229,18 @@ fun EmptyHint(text: String = "📭 無資料") {
     }
 }
 
-// ── 全螢幕橫向圖表檢視(可縮放) ─────────────────────
+// ── 全螢幕圖表檢視(可縮放，依手機顯示方向呈現，不固定為橫向或縱向) ─────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -> Unit) {
     val context = LocalContext.current
     val activity = context.findActivity()
 
-    val size = currentAdaptiveSize()
-    // 轉為橫向；關閉時恢復直向（僅在 Compact 手機強制轉向，平板維持自然方向）
-    if (size.isCompact) {
-        LaunchedEffect(Unit) {
-            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
-        DisposableEffect(Unit) {
-            onDispose {
-                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
+    // 依手機顯示方向呈現，不固定為橫向顯示或縱向顯示；重設為跟隨系統方向
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        onDispose {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
     BackHandler(onBack = onClose)
