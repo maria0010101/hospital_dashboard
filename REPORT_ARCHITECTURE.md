@@ -15,6 +15,7 @@
 [UI Layer]
   MainActivity.kt
     └─ DashboardScreen.kt (TopAppBar, FilterSheet, KPI 摘要卡片, 全螢幕放大 Dialog)
+        ├─ adaptive/ (WindowSize.kt, AdaptiveNavigation.kt, AdaptiveSheet.kt: Compact/Medium/Expanded 響應式佈局)
         ├─ DashboardTabs.kt (OpdTab, IpdTab, BedTab, OtherTab, BedDetailTab, PhysServiceTab, PhysIncomeTab)
         ├─ AnalysisTab.kt (AI 脫敏與串流分析)
         └─ charts/Charts.kt (Canvas 自繪圖表: LineChart, HBarChart, VBarChart, PieChart, DataTable, 明細卡片)

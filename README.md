@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android
 
-[![Version](https://img.shields.io/badge/version-0.6.3-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.3)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.7.0)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
@@ -9,10 +9,10 @@
 
 ---
 
-## 📥 最新安裝檔下載 (v0.6.3)
+## 📥 最新安裝檔下載 (v0.7.0)
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.6.3.apk`](release/hospital_dashboard_v0.6.3.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.6.3)
+- **專案內建載點**：[`release/hospital_dashboard_v0.7.0.apk`](release/hospital_dashboard_v0.7.0.apk)
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.7.0)
 
 ---
 
@@ -117,7 +117,35 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.6.3 (Latest)**
+### **v0.7.0 (Latest)**
+- **Android 平板與大螢幕自適應版面（Adaptive Layout）完整支援**：
+  - **尺寸抽象層（WindowSize & AdaptiveSize）**：
+    - 引入 `material3-window-size-class`，建立 `AdaptiveSize` 三級規範（`Compact` < 600dp、`Medium` 600~839dp、`Expanded` >= 840dp）。
+    - 統一收斂全域 breakpoint，取代硬編碼寬度判斷，並注入 `LocalWindowSize` 提供全樹響應。
+  - **大螢幕側邊導覽（NavigationRail）**：
+    - Medium 與 Expanded 螢幕改以左側 `NavigationRail` 呈現 5 大核心分頁導覽，釋放垂直閱讀空間。
+    - 將「⚙ 篩選」與「🔄 更換資料」功能按鈕整合至側邊導覽列底部，避免頂部標題列擁擠並提升大螢幕操作人因體驗。
+    - 手機直向（Compact）維持既有頂部 `PrimaryScrollableTabRow` 與操作行為，零退化。
+  - **KPI 核心指標雙排／多欄網格排版**：
+    - Medium 改採 3 欄網格、Expanded 展開為 5 欄網格，9 項核心營運指標一次綜覽無須水平捲動。
+    - KPI 卡片取消 150dp 最大寬度限制，以網格寬度自然伸展對齊。
+  - **圖表雙欄／三欄網格展示（TabGrid）**：
+    - 門急診、住院、病床利用、其他服務等各分頁圖表切換為 `LazyVerticalGrid` 網格佈局（Medium 雙欄、Expanded 三欄），大幅提升大螢幕資訊密度。
+    - 解決單一院區下動態高度在雙欄過度壓扁問題，平板模式固定保持 220~240dp 黃金繪圖比例。
+    - 主畫面容器架構分流，徹底防範 `LazyVerticalGrid` 於巢狀無限高度捲動容器中的崩潰風險。
+  - **彈窗面板對話框化（AdaptiveSheet）**：
+    - 篩選面板（`FilterSheet`）、各院區概況（`BranchSummarySheet`）、初診面板（`FirstVisitSheet`）、護理站佔床率（`BedStationOccSheet`）與差額病床明細（`DiffBedStationOccSheet`）在大螢幕上自動轉換為優雅置中 `Dialog`（80% 寬高），杜絕全螢幕拉長變形。
+  - **跑馬燈效能與表格自適應優化**：
+    - 新增 `adaptiveMarquee()`，在平板大螢幕自動停用文字跑馬燈滾動動畫，消除無謂持續重繪，降低 GPU/CPU 耗能。
+    - `WideTable` 與全螢幕表格放大（`TableZoom`）於大螢幕自動填滿可用寬度（`fillMaxWidth()`），免除水平橫向拖曳捲動。
+    - 全螢幕圖表（`ZoomChartScreen`）在大螢幕取消強制轉為橫向與還原直向限制，尊重平板使用者手持方向習慣。
+  - **核心統計口徑與手機體驗 100% 嚴格保護**：
+    - 佔床率加權統計口徑、近三個月趨勢、零值排除、YoY 比較、階層式 4 層下鑽（`UniversalDrillDownCard`）完全維持不變。
+    - 手機端（Compact）維持既有視覺比例與功能行號無退化。
+
+---
+
+### **v0.6.3**
 - **病床分頁病床類別佔床率計算邏輯修正（由簡單平均改為住院人日/實際床日加權計算）**：
   - 修正前：病床類別佔床率採用該類別下所有護理站佔床率的簡單平均（`AVG(CAST(actual_occupancy_rate AS REAL))`），容易因床數極少之小型護理站低佔床率而大幅拉低整體類別數值（例如加護病床僅顯示 44.5%）。
   - 修正後：依醫療統計業務定義，全面改為該類別下所有護理站的「**住院人日合計除以實際床日數合計**」（`SUM(CAST(admission_days AS REAL)) / NULLIF(SUM(CAST(actual_bed_days AS REAL)), 0)`），登記佔床率同步對應採用 `住院人日合計 / 登記床日數合計`。
@@ -250,7 +278,7 @@ flowchart LR
 
 # 編譯 Release APK（已內建 debug keystore 簽章，開箱即裝）
 ./gradlew assembleRelease
-# 產出檔案位置：release/hospital_dashboard_v0.6.2.apk
+# 產出檔案位置：release/hospital_dashboard_v0.7.0.apk
 ```
 
 ---
