@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
+import com.example.hospital_dashboard.ui.adaptive.isAtLeastMedium
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -894,7 +896,7 @@ private fun UniversalDrillDownCard(
     var selectedBranch by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialBranch) }
     var selectedDivision by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf(initialDivision) }
     var selectedDepartment by remember(info, config, initialLevel, initialBranch, initialDivision) { mutableStateOf<String?>(null) }
-    val isWide = LocalConfiguration.current.screenWidthDp >= 600
+    val isWide = currentAdaptiveSize().isAtLeastMedium
 
     val parsedYm: Pair<Int, Int> = remember(info.xLabel) {
         parseYmLabel(info.xLabel) ?: run {

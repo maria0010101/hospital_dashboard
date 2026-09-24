@@ -17,15 +17,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import com.example.hospital_dashboard.ui.DashboardScreen
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import com.example.hospital_dashboard.ui.FilePickScreen
+import com.example.hospital_dashboard.ui.adaptive.LocalWindowSize
 import com.example.hospital_dashboard.ui.charts.ZoomChartScreen
 import com.example.hospital_dashboard.ui.theme.Hospital_dashboardTheme
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
             Hospital_dashboardTheme {
                 val vm: DashboardViewModel = viewModel()
                 val fontScaleLevel by vm.fontScaleLevel.collectAsState()
@@ -37,7 +42,10 @@ class MainActivity : ComponentActivity() {
                         fontScale = baseDensity.fontScale * fontMultiplier
                     )
                 }
-                CompositionLocalProvider(LocalDensity provides customDensity) {
+                CompositionLocalProvider(
+                    LocalDensity provides customDensity,
+                    LocalWindowSize provides windowSizeClass
+                ) {
                     val zoom by vm.zoomChart.collectAsState()
                     if (zoom != null) {
                         ZoomChartScreen(vm, zoom!!, onClose = { vm.closeZoom() })
