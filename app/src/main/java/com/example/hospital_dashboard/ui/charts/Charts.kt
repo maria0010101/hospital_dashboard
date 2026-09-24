@@ -4,8 +4,11 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
+import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
 import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
 import com.example.hospital_dashboard.ui.adaptive.isAtLeastMedium
+import com.example.hospital_dashboard.ui.adaptive.isCompact
+import com.example.hospital_dashboard.ui.adaptive.pick
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -200,7 +203,7 @@ fun ChartCard(
                     title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).basicMarquee(),
+                    modifier = Modifier.weight(1f).adaptiveMarquee(),
                     maxLines = 1
                 )
                 if (onClick != null) {
@@ -233,13 +236,16 @@ fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -
     val context = LocalContext.current
     val activity = context.findActivity()
 
-    // 轉為橫向；關閉時恢復直向
-    LaunchedEffect(Unit) {
-        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    val size = currentAdaptiveSize()
+    // 轉為橫向；關閉時恢復直向（僅在 Compact 手機強制轉向，平板維持自然方向）
+    if (size.isCompact) {
+        LaunchedEffect(Unit) {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        DisposableEffect(Unit) {
+            onDispose {
+                activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
         }
     }
     BackHandler(onBack = onClose)
@@ -698,14 +704,21 @@ private fun ZoomableBox(content: @Composable () -> Unit) {
 /** 表格類內容：橫向全螢幕 + 可捲動。 */
 @Composable
 private fun TableZoom(data: TableData, onRowClick: ((Int) -> Unit)? = null) {
+    val size = currentAdaptiveSize()
     Column(
         Modifier
             .fillMaxSize()
             .padding(top = 44.dp, bottom = 40.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            DataTable(data, Modifier.width(960.dp), onRowClick)
+        if (size.isCompact) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                DataTable(data, Modifier.width(960.dp), onRowClick)
+            }
+        } else {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                DataTable(data, Modifier.fillMaxWidth(), onRowClick)
+            }
         }
     }
 }
@@ -940,16 +953,20 @@ private fun UniversalDrillDownCard(
         }
     }
 
+    val size = currentAdaptiveSize()
+    val cardWidth = size.pick(0.96f, 0.90f, 0.80f)
+    val maxHeight = size.pick(260.dp, 360.dp, 440.dp)
+
     Card(
         modifier = modifier
-            .fillMaxWidth(0.96f)
+            .fillMaxWidth(cardWidth)
             .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column(
             Modifier
-                .heightIn(max = 260.dp)
+                .heightIn(max = maxHeight)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             // 頂部導航列：返回按鈕 + 麵包屑導航 + 關閉按鈕

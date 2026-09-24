@@ -73,7 +73,20 @@ import com.example.hospital_dashboard.ui.charts.VBarClick
 import com.example.hospital_dashboard.ui.charts.VBarChart
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.runtime.collectAsState
+import com.example.hospital_dashboard.ui.adaptive.AdaptiveSheet
+import com.example.hospital_dashboard.ui.adaptive.AdaptiveSize
+import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
+import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
+import com.example.hospital_dashboard.ui.adaptive.isCompact
+import com.example.hospital_dashboard.ui.adaptive.isExpanded
+import com.example.hospital_dashboard.ui.adaptive.pick
 import com.example.hospital_dashboard.ui.charts.dynamicHBarHeight
 import com.example.hospital_dashboard.ui.charts.dynamicLineHeight
 import kotlinx.coroutines.Dispatchers
@@ -104,6 +117,22 @@ private fun TabColumn(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+@Composable
+private fun TabGrid(
+    columns: Int,
+    modifier: Modifier = Modifier,
+    content: LazyGridScope.() -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = content
+    )
+}
+
 // ── 可點擊放大之圖表卡片 ─────────────────────────────
 @Composable
 private fun LineCard(
@@ -115,7 +144,8 @@ private fun LineCard(
 ) {
     val filters by vm.filters.collectAsState()
     val isSingleBranch = (filters.branches.size == 1 || filters.showHospitalTotal) && !title.contains("部別")
-    val effHeight = if (dynamicHeight && isSingleBranch) dynamicLineHeight(true, height) else height
+    val size = currentAdaptiveSize()
+    val effHeight = if (dynamicHeight && isSingleBranch && size.isCompact) dynamicLineHeight(true, height) else height
     ChartCard(title, onClick = data?.let { { vm.openZoom(ChartContent.Line(title, it, fmt, monthDef, clickAction)) } }) {
         data?.let { LineChart(it, height = effHeight, yFormatter = fmt) } ?: LoadingBox()
     }
@@ -131,8 +161,9 @@ private fun HBarCard(
 ) {
     val filters by vm.filters.collectAsState()
     val isSingleBranch = (filters.branches.size == 1 || filters.showHospitalTotal) && !title.contains("部別") && !title.contains("病床類別")
+    val size = currentAdaptiveSize()
     val effHeight = when {
-        !dynamicHeight -> height
+        !dynamicHeight || !size.isCompact -> height
         data != null && data.rows.size <= 4 -> dynamicHBarHeight(data.rows.size, height)
         isSingleBranch -> 80.dp
         else -> height
@@ -200,57 +231,91 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         "（$yStr${filters.months.first()}月）"
     } else ""
 
-    TabColumn {
-        // 1. 門診人次月趨勢 / 各院區門診人次
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區門診人次$monthSuffix",
-                data = brOpdBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
-        }
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        TabColumn {
+            // 1. 門診人次月趨勢 / 各院區門診人次
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區門診人次$monthSuffix",
+                    data = brOpdBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 230.dp)
+            }
 
-        // 2. 急診人次月趨勢 / 各院區急診人次
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區急診人次$monthSuffix",
-                data = brErBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
-        }
+            // 2. 急診人次月趨勢 / 各院區急診人次
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區急診人次$monthSuffix",
+                    data = brErBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "急診人次月趨勢（依院區）", er, height = 200.dp)
+            }
 
-        // 3. 各部別門診人次趨勢 (整併原先的科別門診人次 TOP20，改以部別呈現，細項再呈現科別)
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各部別門診人次$monthSuffix",
-                data = divBar,
-                height = 240.dp,
-                clickAction = HBarClick.DivDept
-            )
-        } else {
-            LineCard(vm, "各部別門診人次趨勢", div, height = 200.dp, clickAction = HBarClick.DivDept)
-        }
+            // 3. 各部別門診人次趨勢 (整併原先的科別門診人次 TOP20，改以部別呈現，細項再呈現科別)
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各部別門診人次$monthSuffix",
+                    data = divBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.DivDept
+                )
+            } else {
+                LineCard(vm, "各部別門診人次趨勢", div, height = 200.dp, clickAction = HBarClick.DivDept)
+            }
 
-        // 4. 初診人次 (替代原初診/複診比例圓餅圖)
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區初診人次$monthSuffix",
-                data = brFirstVisitBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "初診人次月趨勢（依院區）", firstVisit, height = 200.dp)
+            // 4. 初診人次 (替代原初診/複診比例圓餅圖)
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區初診人次$monthSuffix",
+                    data = brFirstVisitBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "初診人次月趨勢（依院區）", firstVisit, height = 200.dp)
+            }
+        }
+    } else {
+        TabGrid(columns = if (size.isExpanded) 3 else 2) {
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區門診人次$monthSuffix", data = brOpdBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "門診人次月趨勢（依院區）", opd, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區急診人次$monthSuffix", data = brErBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "急診人次月趨勢（依院區）", er, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各部別門診人次$monthSuffix", data = divBar, height = 240.dp, clickAction = HBarClick.DivDept)
+                } else {
+                    LineCard(vm, "各部別門診人次趨勢", div, height = 240.dp, clickAction = HBarClick.DivDept)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區初診人次$monthSuffix", data = brFirstVisitBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "初診人次月趨勢（依院區）", firstVisit, height = 240.dp)
+                }
+            }
         }
     }
 
@@ -271,7 +336,7 @@ private fun FirstVisitSheet(
     val years = filters.years.mapNotNull { it.toIntOrNull() }
     val note = if (years.isNotEmpty()) "篩選區間 民國${years.min()}-${years.max()}年 累計" else ""
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
@@ -288,7 +353,7 @@ private fun FirstVisitSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.weight(1f).basicMarquee(), maxLines = 1)
+                        modifier = Modifier.weight(1f).adaptiveMarquee(), maxLines = 1)
                     Text("初診 ${Fmt.int(s.firstVisit)}",
                         style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
                     Spacer(Modifier.width(8.dp))
@@ -339,84 +404,132 @@ fun IpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         "（$yStr${filters.months.first()}月）"
     } else ""
 
-    TabColumn {
-        // 1. 住院人日月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區住院人日$monthSuffix",
-                data = brAdmDaysBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "住院人日月趨勢（依院區）", admDays, height = 220.dp)
-        }
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        TabColumn {
+            // 1. 住院人日月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區住院人日$monthSuffix",
+                    data = brAdmDaysBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "住院人日月趨勢（依院區）", admDays, height = 220.dp)
+            }
 
-        // 2. 住院人次月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區住院人次$monthSuffix",
-                data = brIpdBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "住院人次月趨勢（依院區）", ipd, height = 200.dp)
-        }
+            // 2. 住院人次月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區住院人次$monthSuffix",
+                    data = brIpdBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "住院人次月趨勢（依院區）", ipd, height = 200.dp)
+            }
 
-        // 3. 出院人日月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區出院人日$monthSuffix",
-                data = brDisDaysBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "出院人日月趨勢（依院區）", disDays, height = 200.dp)
-        }
+            // 3. 出院人日月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區出院人日$monthSuffix",
+                    data = brDisDaysBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "出院人日月趨勢（依院區）", disDays, height = 200.dp)
+            }
 
-        // 4. 出院人次月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區出院人次$monthSuffix",
-                data = brDisBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 200.dp)
-        }
+            // 4. 出院人次月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區出院人次$monthSuffix",
+                    data = brDisBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 200.dp)
+            }
 
-        // 5. 住院人日月趨勢（依部別）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各部別住院人日$monthSuffix",
-                data = brDivDaysBar,
-                height = 240.dp,
-                clickAction = HBarClick.IpdDivDept
-            )
-        } else {
-            LineCard(vm, "住院人日月趨勢（依部別）", divDays, height = 200.dp, clickAction = HBarClick.IpdDivDept)
-        }
+            // 5. 住院人日月趨勢（依部別）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各部別住院人日$monthSuffix",
+                    data = brDivDaysBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.IpdDivDept
+                )
+            } else {
+                LineCard(vm, "住院人日月趨勢（依部別）", divDays, height = 200.dp, clickAction = HBarClick.IpdDivDept)
+            }
 
-        // 6. 平均住院日月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區平均住院日$monthSuffix",
-                data = brAlosBar,
-                height = 240.dp,
-                fmt = { String.format("%.1f日", it) },
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "平均住院日月趨勢（依院區）", alos, height = 200.dp, fmt = { String.format("%.1f日", it) })
+            // 6. 平均住院日月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區平均住院日$monthSuffix",
+                    data = brAlosBar,
+                    height = 240.dp,
+                    fmt = { String.format("%.1f日", it) },
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "平均住院日月趨勢（依院區）", alos, height = 200.dp, fmt = { String.format("%.1f日", it) })
+            }
+        }
+    } else {
+        TabGrid(columns = if (size.isExpanded) 3 else 2) {
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區住院人日$monthSuffix", data = brAdmDaysBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "住院人日月趨勢（依院區）", admDays, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區住院人次$monthSuffix", data = brIpdBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "住院人次月趨勢（依院區）", ipd, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區出院人日$monthSuffix", data = brDisDaysBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "出院人日月趨勢（依院區）", disDays, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區出院人次$monthSuffix", data = brDisBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "出院人次月趨勢（依院區）", dis, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各部別住院人日$monthSuffix", data = brDivDaysBar, height = 240.dp, clickAction = HBarClick.IpdDivDept)
+                } else {
+                    LineCard(vm, "住院人日月趨勢（依部別）", divDays, height = 240.dp, clickAction = HBarClick.IpdDivDept)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區平均住院日$monthSuffix", data = brAlosBar, height = 240.dp, fmt = { String.format("%.1f日", it) }, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "平均住院日月趨勢（依院區）", alos, height = 240.dp, fmt = { String.format("%.1f日", it) })
+                }
+            }
         }
     }
 }
@@ -481,145 +594,243 @@ fun BedTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         "（$yStr${filters.months.first()}月）"
     } else ""
 
-    TabColumn {
-        // 篩選列：大類別
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-            Column(Modifier.padding(12.dp)) {
-                Text("篩選大類別", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = majors.isEmpty(), onClick = { majors = emptyList() }, label = { Text("全部") })
-                    allMajors.forEach { c ->
-                        FilterChip(selected = c in majors, onClick = {
-                            majors = if (c in majors) majors - c else majors + c
-                        }, label = { Text(c) })
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        TabColumn {
+            // 篩選列：大類別
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("篩選大類別", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = majors.isEmpty(), onClick = { majors = emptyList() }, label = { Text("全部") })
+                        allMajors.forEach { c ->
+                            FilterChip(selected = c in majors, onClick = {
+                                majors = if (c in majors) majors - c else majors + c
+                            }, label = { Text(c) })
+                        }
                     }
                 }
             }
-        }
 
-        // 1. 實際床佔床率月趨勢（依病床類別）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各病床類別實際佔床率$monthSuffix",
-                data = catOccBar,
-                height = 240.dp,
-                fmt = Fmt::percent
-            )
-        } else {
-            LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 230.dp, fmt = Fmt::percent)
-        }
-
-        // 2. 實際開床率月趨勢（依病床類別）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各病床類別實際開床率$monthSuffix",
-                data = catOpenRateBar,
-                height = 240.dp,
-                fmt = Fmt::int
-            )
-        } else {
-            LineCard(vm, "實際開床率月趨勢（依病床類別）", openRate, height = 200.dp, fmt = Fmt::percent)
-        }
-
-        // 3. 實際床佔床率月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區實際佔床率$monthSuffix",
-                data = brOccBar,
-                height = 240.dp,
-                fmt = Fmt::percent,
-                clickAction = HBarClick.BedBranch
-            )
-        } else {
-            LineCard(vm, "實際床佔床率月趨勢（依院區）", brOcc, height = 220.dp, fmt = Fmt::percent)
-        }
-
-        // 4. 實際開床率月趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區實際開床率$monthSuffix",
-                data = brOpenRateBar,
-                height = 240.dp,
-                fmt = Fmt::int,
-                clickAction = HBarClick.BedBranch
-            )
-        } else {
-            LineCard(vm, "實際開床率月趨勢（依院區）", brOpenRate, height = 200.dp, fmt = Fmt::percent)
-        }
-
-        // 5. 各院區病床類別實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "病床類別熱力圖",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+            // 1. 實際床佔床率月趨勢（依病床類別）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各病床類別實際佔床率$monthSuffix",
+                    data = catOccBar,
+                    height = 240.dp,
+                    fmt = Fmt::percent
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(
-                        selected = !excludeOther,
-                        onClick = { excludeOther = false },
-                        label = { Text("全部顯示") }
-                    )
-                    FilterChip(
-                        selected = excludeOther,
-                        onClick = { excludeOther = true },
-                        label = { Text("排除其他") }
-                    )
-                }
+            } else {
+                LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 230.dp, fmt = Fmt::percent)
             }
-        }
 
-        if (heatmaps != null && heatmaps.isNotEmpty()) {
-            heatmaps.forEach { hm ->
-                BedCategoryHeatCard(vm, hm) { cat ->
-                    selectedBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
-                }
-            }
-        }
-
-        // 6. 各院區差額病床實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "差額病床熱力圖",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
+            // 2. 實際開床率月趨勢（依病床類別）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各病床類別實際開床率$monthSuffix",
+                    data = catOpenRateBar,
+                    height = 240.dp,
+                    fmt = Fmt::int
                 )
+            } else {
+                LineCard(vm, "實際開床率月趨勢（依病床類別）", openRate, height = 200.dp, fmt = Fmt::percent)
             }
-        }
 
-        if (diffHeatmaps != null && diffHeatmaps.isNotEmpty()) {
-            diffHeatmaps.forEach { hm ->
-                DiffBedCategoryHeatCard(vm, hm) { cat ->
-                    selectedDiffBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+            // 3. 實際床佔床率月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區實際佔床率$monthSuffix",
+                    data = brOccBar,
+                    height = 240.dp,
+                    fmt = Fmt::percent,
+                    clickAction = HBarClick.BedBranch
+                )
+            } else {
+                LineCard(vm, "實際床佔床率月趨勢（依院區）", brOcc, height = 220.dp, fmt = Fmt::percent)
+            }
+
+            // 4. 實際開床率月趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區實際開床率$monthSuffix",
+                    data = brOpenRateBar,
+                    height = 240.dp,
+                    fmt = Fmt::int,
+                    clickAction = HBarClick.BedBranch
+                )
+            } else {
+                LineCard(vm, "實際開床率月趨勢（依院區）", brOpenRate, height = 200.dp, fmt = Fmt::percent)
+            }
+
+            // 5. 各院區病床類別實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "病床類別熱力圖",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = !excludeOther,
+                            onClick = { excludeOther = false },
+                            label = { Text("全部顯示") }
+                        )
+                        FilterChip(
+                            selected = excludeOther,
+                            onClick = { excludeOther = true },
+                            label = { Text("排除其他") }
+                        )
+                    }
                 }
             }
-        } else if (diffHeatmaps != null && diffHeatmaps.isEmpty()) {
-            EmptyHint("📭 無差額病床資料")
+
+            if (heatmaps != null && heatmaps.isNotEmpty()) {
+                heatmaps.forEach { hm ->
+                    BedCategoryHeatCard(vm, hm) { cat ->
+                        selectedBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+                    }
+                }
+            }
+
+            // 6. 各院區差額病床實際佔床率（％）熱力圖卡片（各院區分開呈現，若篩選不含則不呈現）
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "差額病床熱力圖",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (diffHeatmaps != null && diffHeatmaps.isNotEmpty()) {
+                diffHeatmaps.forEach { hm ->
+                    DiffBedCategoryHeatCard(vm, hm) { cat ->
+                        selectedDiffBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+                    }
+                }
+            } else if (diffHeatmaps != null && diffHeatmaps.isEmpty()) {
+                EmptyHint("📭 無差額病床資料")
+            }
+        }
+    } else {
+        TabGrid(columns = if (size.isExpanded) 3 else 2) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("篩選大類別", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = majors.isEmpty(), onClick = { majors = emptyList() }, label = { Text("全部") })
+                            allMajors.forEach { c ->
+                                FilterChip(selected = c in majors, onClick = {
+                                    majors = if (c in majors) majors - c else majors + c
+                                }, label = { Text(c) })
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各病床類別實際佔床率$monthSuffix", data = catOccBar, height = 240.dp, fmt = Fmt::percent)
+                } else {
+                    LineCard(vm, "實際佔床率月趨勢（依病床類別）", occ, height = 240.dp, fmt = Fmt::percent)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各病床類別實際開床率$monthSuffix", data = catOpenRateBar, height = 240.dp, fmt = Fmt::int)
+                } else {
+                    LineCard(vm, "實際開床率月趨勢（依病床類別）", openRate, height = 240.dp, fmt = Fmt::percent)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區實際佔床率$monthSuffix", data = brOccBar, height = 240.dp, fmt = Fmt::percent, clickAction = HBarClick.BedBranch)
+                } else {
+                    LineCard(vm, "實際床佔床率月趨勢（依院區）", brOcc, height = 240.dp, fmt = Fmt::percent)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區實際開床率$monthSuffix", data = brOpenRateBar, height = 240.dp, fmt = Fmt::int, clickAction = HBarClick.BedBranch)
+                } else {
+                    LineCard(vm, "實際開床率月趨勢（依院區）", brOpenRate, height = 240.dp, fmt = Fmt::percent)
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("病床類別熱力圖", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = !excludeOther, onClick = { excludeOther = false }, label = { Text("全部顯示") })
+                            FilterChip(selected = excludeOther, onClick = { excludeOther = true }, label = { Text("排除其他") })
+                        }
+                    }
+                }
+            }
+            if (heatmaps != null && heatmaps.isNotEmpty()) {
+                heatmaps.forEach { hm ->
+                    item(span = { GridItemSpan(if (size.isExpanded) 1 else maxLineSpan) }) {
+                        BedCategoryHeatCard(vm, hm) { cat ->
+                            selectedBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+                        }
+                    }
+                }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("差額病床熱力圖", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (diffHeatmaps != null && diffHeatmaps.isNotEmpty()) {
+                diffHeatmaps.forEach { hm ->
+                    item(span = { GridItemSpan(if (size.isExpanded) 1 else maxLineSpan) }) {
+                        DiffBedCategoryHeatCard(vm, hm) { cat ->
+                            selectedDiffBedCat = SelectedBedCat(hm.branchName, cat, hm.latestYm)
+                        }
+                    }
+                }
+            } else if (diffHeatmaps != null && diffHeatmaps.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyHint("📭 無差額病床資料")
+                }
+            }
         }
     }
 
@@ -672,7 +883,7 @@ fun BedCategoryHeatCard(
                     campusTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).basicMarquee(),
+                    modifier = Modifier.weight(1f).adaptiveMarquee(),
                     maxLines = 1
                 )
                 if (ymStr.isNotEmpty()) {
@@ -722,7 +933,7 @@ fun BedCategoryHeatCard(
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color.Black,
-                                            modifier = Modifier.weight(1f).basicMarquee(),
+                                            modifier = Modifier.weight(1f).adaptiveMarquee(),
                                             maxLines = 1
                                         )
                                         Spacer(Modifier.width(4.dp))
@@ -765,7 +976,7 @@ fun BedStationOccSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.82f).dp
 
-    ModalBottomSheet(
+    AdaptiveSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -879,7 +1090,7 @@ fun DiffBedCategoryHeatCard(
                     campusTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).basicMarquee(),
+                    modifier = Modifier.weight(1f).adaptiveMarquee(),
                     maxLines = 1
                 )
                 if (ymStr.isNotEmpty()) {
@@ -929,7 +1140,7 @@ fun DiffBedCategoryHeatCard(
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color.Black,
-                                            modifier = Modifier.weight(1f).basicMarquee(),
+                                            modifier = Modifier.weight(1f).adaptiveMarquee(),
                                             maxLines = 1
                                         )
                                         Spacer(Modifier.width(4.dp))
@@ -972,7 +1183,7 @@ fun DiffBedStationOccSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.82f).dp
 
-    ModalBottomSheet(
+    AdaptiveSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -1066,8 +1277,13 @@ fun DiffBedStationOccSheet(
 
 @Composable
 private fun WideTable(data: TableData) {
-    Row(Modifier.horizontalScroll(rememberScrollState())) {
-        DataTable(data, Modifier.width(720.dp))
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            DataTable(data, Modifier.width(720.dp))
+        }
+    } else {
+        DataTable(data, Modifier.fillMaxWidth())
     }
 }
 
@@ -1115,117 +1331,178 @@ fun OtherTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         "（$yStr${filters.months.first()}月）"
     } else ""
 
-    TabColumn {
-        // 1. 院外門診部服務量趨勢（依院區）
-        if (isSingleMonth) {
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        TabColumn {
+            // 1. 院外門診部服務量趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區院外門診部服務量$monthSuffix",
+                    data = brOffsiteBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.OffsiteBranch
+                )
+            } else {
+                LineCard(vm, "院外門診部服務量趨勢（依院區）", offsite, height = 210.dp, clickAction = HBarClick.OffsiteBranch)
+            }
+
+            // 2. 洗腎人次（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區洗腎人次$monthSuffix",
+                    data = brDialysisBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "洗腎人次月趨勢（依院區）", dialysis, height = 210.dp)
+            }
+
+            // 3. 健檢人次（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區健檢人次$monthSuffix",
+                    data = brCheckupBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "健檢人次月趨勢（依院區）", checkup, height = 210.dp)
+            }
+
+            // 4. 手術人次（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區手術人次$monthSuffix",
+                    data = brSurgeryBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "手術人次月趨勢（依院區）", surgery, height = 210.dp)
+            }
+
+            // 5. 生產人次（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區生產人次$monthSuffix",
+                    data = brDeliveryBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept
+                )
+            } else {
+                LineCard(vm, "生產人次月趨勢（依院區）", delivery, height = 210.dp)
+            }
+
+            // 6. 總收入趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區總收入$monthSuffix",
+                    data = brIncTotalBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept,
+                    fmt = Fmt::money
+                )
+            } else {
+                LineCard(vm, "總收入趨勢（依院區）", incTotal, height = 230.dp, fmt = Fmt::money)
+            }
+
+            // 7. 自費收入趨勢（依院區）
+            if (isSingleMonth) {
+                HBarCard(
+                    vm = vm,
+                    title = "各院區自費收入$monthSuffix",
+                    data = brIncSelfBar,
+                    height = 240.dp,
+                    clickAction = HBarClick.BranchDept,
+                    fmt = Fmt::money
+                )
+            } else {
+                LineCard(vm, "自費收入趨勢（依院區）", incSelf, height = 200.dp, fmt = Fmt::money)
+            }
+
+            // 8. 各院區總收入（累計，單位千元；重疊橫條含去年同期半透明比對）
             HBarCard(
                 vm = vm,
-                title = "各院區院外門診部服務量$monthSuffix",
-                data = brOffsiteBar,
+                title = "各院區總收入（累計，單位千元）",
+                data = brIncYoy,
                 height = 240.dp,
-                clickAction = HBarClick.OffsiteBranch
+                fmt = Fmt::moneyK
             )
-        } else {
-            LineCard(vm, "院外門診部服務量趨勢（依院區）", offsite, height = 210.dp, clickAction = HBarClick.OffsiteBranch)
-        }
 
-        // 2. 洗腎人次（依院區）
-        if (isSingleMonth) {
+            // 9. 各院區自費收入（累計，單位千元；重疊橫條含去年同期半透明比對）
             HBarCard(
                 vm = vm,
-                title = "各院區洗腎人次$monthSuffix",
-                data = brDialysisBar,
+                title = "各院區自費收入（累計，單位千元）",
+                data = brSelfIncYoy,
                 height = 240.dp,
-                clickAction = HBarClick.BranchDept
+                fmt = Fmt::moneyK
             )
-        } else {
-            LineCard(vm, "洗腎人次月趨勢（依院區）", dialysis, height = 210.dp)
         }
-
-        // 3. 健檢人次（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區健檢人次$monthSuffix",
-                data = brCheckupBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "健檢人次月趨勢（依院區）", checkup, height = 210.dp)
+    } else {
+        TabGrid(columns = if (size.isExpanded) 3 else 2) {
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區院外門診部服務量$monthSuffix", data = brOffsiteBar, height = 240.dp, clickAction = HBarClick.OffsiteBranch)
+                } else {
+                    LineCard(vm, "院外門診部服務量趨勢（依院區）", offsite, height = 240.dp, clickAction = HBarClick.OffsiteBranch)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區洗腎人次$monthSuffix", data = brDialysisBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "洗腎人次月趨勢（依院區）", dialysis, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區健檢人次$monthSuffix", data = brCheckupBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "健檢人次月趨勢（依院區）", checkup, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區手術人次$monthSuffix", data = brSurgeryBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "手術人次月趨勢（依院區）", surgery, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區生產人次$monthSuffix", data = brDeliveryBar, height = 240.dp, clickAction = HBarClick.BranchDept)
+                } else {
+                    LineCard(vm, "生產人次月趨勢（依院區）", delivery, height = 240.dp)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區總收入$monthSuffix", data = brIncTotalBar, height = 240.dp, clickAction = HBarClick.BranchDept, fmt = Fmt::money)
+                } else {
+                    LineCard(vm, "總收入趨勢（依院區）", incTotal, height = 240.dp, fmt = Fmt::money)
+                }
+            }
+            item {
+                if (isSingleMonth) {
+                    HBarCard(vm = vm, title = "各院區自費收入$monthSuffix", data = brIncSelfBar, height = 240.dp, clickAction = HBarClick.BranchDept, fmt = Fmt::money)
+                } else {
+                    LineCard(vm, "自費收入趨勢（依院區）", incSelf, height = 240.dp, fmt = Fmt::money)
+                }
+            }
+            item {
+                HBarCard(vm = vm, title = "各院區總收入（累計，單位千元）", data = brIncYoy, height = 240.dp, fmt = Fmt::moneyK)
+            }
+            item {
+                HBarCard(vm = vm, title = "各院區自費收入（累計，單位千元）", data = brSelfIncYoy, height = 240.dp, fmt = Fmt::moneyK)
+            }
         }
-
-        // 4. 手術人次（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區手術人次$monthSuffix",
-                data = brSurgeryBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "手術人次月趨勢（依院區）", surgery, height = 210.dp)
-        }
-
-        // 5. 生產人次（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區生產人次$monthSuffix",
-                data = brDeliveryBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept
-            )
-        } else {
-            LineCard(vm, "生產人次月趨勢（依院區）", delivery, height = 210.dp)
-        }
-
-        // 6. 總收入趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區總收入$monthSuffix",
-                data = brIncTotalBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept,
-                fmt = Fmt::money
-            )
-        } else {
-            LineCard(vm, "總收入趨勢（依院區）", incTotal, height = 230.dp, fmt = Fmt::money)
-        }
-
-        // 7. 自費收入趨勢（依院區）
-        if (isSingleMonth) {
-            HBarCard(
-                vm = vm,
-                title = "各院區自費收入$monthSuffix",
-                data = brIncSelfBar,
-                height = 240.dp,
-                clickAction = HBarClick.BranchDept,
-                fmt = Fmt::money
-            )
-        } else {
-            LineCard(vm, "自費收入趨勢（依院區）", incSelf, height = 200.dp, fmt = Fmt::money)
-        }
-
-        // 8. 各院區總收入（累計，單位千元；重疊橫條含去年同期半透明比對）
-        HBarCard(
-            vm = vm,
-            title = "各院區總收入（累計，單位千元）",
-            data = brIncYoy,
-            height = 240.dp,
-            fmt = Fmt::moneyK
-        )
-
-        // 9. 各院區自費收入（累計，單位千元；重疊橫條含去年同期半透明比對）
-        HBarCard(
-            vm = vm,
-            title = "各院區自費收入（累計，單位千元）",
-            data = brSelfIncYoy,
-            height = 240.dp,
-            fmt = Fmt::moneyK
-        )
     }
 }
 
