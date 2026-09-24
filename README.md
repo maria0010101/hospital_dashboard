@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.7.0)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.0)
 [![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
@@ -9,10 +9,10 @@
 
 ---
 
-## 📥 最新安裝檔下載 (v0.7.0)
+## 📥 最新安裝檔下載 (v0.8.0)
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.7.0.apk`](release/hospital_dashboard_v0.7.0.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.7.0)
+- **專案內建載點**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.0)
 
 ---
 
@@ -20,7 +20,7 @@
 
 1. **⚡ 零第三方依賴離線解析**
    - 採用 Android 原生 `ZipFile` 結合 `XmlPullParser` 流式解析 xlsx 活頁簿，無引入大型肥大函式庫（如 Apache POI）。
-   - 支援 8 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量、差額病床業務資料）十餘萬筆資料之原子交易匯入本機 SQLite（`HospitalDb`）。
+   - 支援 9 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量、差額病床業務資料、門診篩檢疫苗人次）十餘萬筆資料之原子交易匯入本機 SQLite（`HospitalDb`）。
 2. **🎨 純原生 Compose Canvas 自繪圖表**
    - 所有折線趨勢圖、單月重疊橫條圖、垂直柱狀圖、圓餅圖、佔床率熱力圖皆由 Jetpack Compose 原生 Canvas 幾何計算繪製，具備極佳的繪製效能與流暢的手勢縮放/拖曳互動。
 3. **🔍 10 項核心營運指標多維度下鑽（3層／4層）**
@@ -105,6 +105,7 @@ flowchart LR
 | **門診人次** | **4 層** | 院區 → 部別 → 科別 → 醫師別 | `physician_service.opd_visit_count` |
 | **急診人次** | **4 層** | 院區 → 部別 → 科別 → 醫師別 | `physician_service.er_visit` |
 | **各部別門診人次** | **4 層** | 部別 → 院區 → 科別 → 醫師別 | `physician_service.opd_visit_count` |
+| **初診人次** | **3 層** | 院區 → 部別 → 科別 | — |
 | **住院人日** | **4 層** | 院區 → 部別 → 科別 → 醫師別 | `physician_service.admission_days` |
 | **各部別住院人日** | **4 層** | 部別 → 院區 → 科別 → 醫師別 | `physician_service.admission_days` |
 | **住院人次** | **3 層** | 院區 → 部別 → 科別 | — |
@@ -117,7 +118,25 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.7.0 (Latest)**
+### **v0.8.0 (Latest)**
+- **新增「門診篩檢疫苗人次」工作表資料匯入與扣除支援**：
+  - 資料庫新增 `vaccine_service` 資料表，支援欄位：`資料年月`、`院區`、`科別名稱`、`院區初複診`、`門診篩檢施打疫苗人次`、`急診篩檢施打疫苗人次`、`流感疫苗人次`、`年度`、`月份`，並於匯入時自動建立索引加速查詢。
+- **門急診分頁「排除疫苗施打人次」圓形滑動切換開關**：
+  - 在門急診分頁頂部新增自適應卡片，以 Material 3 圓形滑動切換開關（`Switch`）呈現。
+  - 切換開關由四大圖表共用，精確扣除疫苗施打人次：
+    1. **門診人次月趨勢（依院區）**：`門診人次 - 門診篩檢施打疫苗人次 - 流感疫苗人次`（依同年月、同院區、同科別名稱扣除）。
+    2. **急診人次月趨勢（依院區）**：`急診人次 - 急診篩檢施打疫苗人次`。
+    3. **各部別門診人次趨勢**：`門診人次 - 門診篩檢施打疫苗人次 - 流感疫苗人次`。
+    4. **初診人次月趨勢（依院區）**：`初診人次 - 院區初複診為「初診」的門診篩檢施打疫苗人次 - 院區初複診為「初診」的流感疫苗人次`。
+- **多層級下鑽展開排除疫苗施打人次**：
+  - 院區、部別、科別等各下鑽層級同步依開關狀態計算扣除疫苗人次。
+  - **醫師別明細維持原狀**：因疫苗人次資料不含醫師代碼，最後一層醫師服務量維持查詢 `physician_service` 原值，不進行重新計算。
+- **初診人次加入 3 層下鑽支援**：
+  - 初診人次月趨勢與單月橫條圖正式納入通用下鑽體系，支援 3 層展開（院區 → 部別 → 科別）。
+
+---
+
+### **v0.7.0**
 - **Android 平板與大螢幕自適應版面（Adaptive Layout）完整支援**：
   - **尺寸抽象層（WindowSize & AdaptiveSize）**：
     - 引入 `material3-window-size-class`，建立 `AdaptiveSize` 三級規範（`Compact` < 600dp、`Medium` 600~839dp、`Expanded` >= 840dp）。
@@ -278,7 +297,7 @@ flowchart LR
 
 # 編譯 Release APK（已內建 debug keystore 簽章，開箱即裝）
 ./gradlew assembleRelease
-# 產出檔案位置：release/hospital_dashboard_v0.7.0.apk
+# 產出檔案位置：release/hospital_dashboard_v0.8.0.apk
 ```
 
 ---

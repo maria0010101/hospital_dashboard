@@ -139,6 +139,27 @@ object SheetConfigs {
                 if (mutable.size > 13) mutable[13] = m
                 mutable
             }
+        ),
+        // 門診篩檢疫苗人次(1150924 起新增)：
+        // 欄位：資料年月、院區、科別名稱、院區初複診、門診篩檢施打疫苗人次、急診篩檢施打疫苗人次、流感疫苗人次、年度、月份
+        SheetConfig(
+            sheet = "門診篩檢疫苗人次",
+            table = "vaccine_service",
+            columns = listOf(
+                "ym", "branch", "dept_name", "visit_type",
+                "opd_vaccine_screen_count", "er_vaccine_screen_count", "flu_vaccine_count",
+                "year", "month", "branch_name"
+            ),
+            derive = { row ->
+                val branch = row.getOrNull(1)?.trim()
+                val ym = row.getOrNull(0)?.trim()?.toIntOrNull()
+                val y = row.getOrNull(7)?.trim()?.ifEmpty { null } ?: ym?.let { (it / 100).toString() }
+                val m = row.getOrNull(8)?.trim()?.ifEmpty { null } ?: ym?.let { (it % 100).toString() }
+                val mutable = row.toMutableList()
+                if (mutable.size > 7) mutable[7] = y
+                if (mutable.size > 8) mutable[8] = m
+                mutable + listOf(branch)
+            }
         )
     )
 

@@ -309,6 +309,7 @@ class OpdRegressionTest {
             "各院區門診人次（8月）" to ("OPD" to 4),
             "各院區急診人次（民國115年08月）" to ("ER" to 4),
             "各部別門診人次（8月）" to ("OPD" to 4),
+            "各院區初診人次（8月）" to ("FIRST_VISIT" to 3),
             "各院區住院人日（8月）" to ("IPD_DAYS" to 4),
             "各院區住院人次（8月）" to ("IPD_COUNT" to 3),
             "各院區出院人日（8月）" to ("DIS_DAYS" to 3),
@@ -334,10 +335,37 @@ class OpdRegressionTest {
         // 院區開頭需為 BRANCH_FIRST
         val brOpd = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區門診人次（8月）")!!
         assertEquals(com.example.hospital_dashboard.ui.charts.DrillHierarchyType.BRANCH_FIRST, brOpd.hierarchy)
+        val brFirst = com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區初診人次（8月）")!!
+        assertEquals(com.example.hospital_dashboard.ui.charts.DrillHierarchyType.BRANCH_FIRST, brFirst.hierarchy)
 
         // 負向測試：累計或非下鑽圖表不應匹配
         assertNull(com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區總收入（累計，單位千元）"))
-        assertNull(com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區初診人次（8月）"))
+        assertNull(com.example.hospital_dashboard.ui.charts.getDrillMetricConfig("各院區初診人次（累計）"))
+    }
+
+    @Test
+    fun testVaccineSheetConfigAndFilter() {
+        // 驗證「門診篩檢疫苗人次」SheetConfig 正確註冊
+        val cfg = com.example.hospital_dashboard.data.SheetConfigs.ALL.firstOrNull { it.sheet == "門診篩檢疫苗人次" }
+        assertNotNull("必須包含「門診篩檢疫苗人次」工作表設定", cfg)
+        assertEquals("vaccine_service", cfg!!.table)
+        assertEquals(
+            listOf("ym", "branch", "dept_name", "visit_type", "opd_vaccine_screen_count", "er_vaccine_screen_count", "flu_vaccine_count", "year", "month", "branch_name"),
+            cfg.columns
+        )
+
+        // 驗證 derive 欄位產生 (branch_name 及年月補齊)
+        val row = listOf("11508", "中興", "內科", "初診", "10", "5", "2", "", "")
+        val derived = cfg.derive?.invoke(row)!!
+        assertEquals("115", derived[7])
+        assertEquals("8", derived[8])
+        assertEquals("中興", derived[9])
+
+        // 驗證 Filters excludeVaccine
+        val fDefault = DashboardRepo.Filters(years = emptyList())
+        assertFalse(fDefault.excludeVaccine)
+        val fExcluded = fDefault.withExcludeVaccine(true)
+        assertTrue(fExcluded.excludeVaccine)
     }
 
     @Test

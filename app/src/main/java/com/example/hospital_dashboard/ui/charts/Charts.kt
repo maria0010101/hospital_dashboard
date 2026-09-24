@@ -860,6 +860,7 @@ private val DRILL_CONFIGS = listOf(
     DrillMetricConfig("住院人日月趨勢（依部別）", "IPD_DAYS", "人日", DrillHierarchyType.DIVISION_FIRST, 4, aliases = listOf("各部別住院人日")),
     DrillMetricConfig("門診人次月趨勢（依院區）", "OPD", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區門診人次", "門診人次")),
     DrillMetricConfig("急診人次月趨勢（依院區）", "ER", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區急診人次", "急診人次")),
+    DrillMetricConfig("初診人次月趨勢（依院區）", "FIRST_VISIT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區初診人次", "初診人次")),
     DrillMetricConfig("住院人日月趨勢（依院區）", "IPD_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區住院人日", "住院人日")),
     DrillMetricConfig("住院人次月趨勢（依院區）", "IPD_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區住院人次", "住院人次")),
     DrillMetricConfig("出院人日月趨勢（依院區）", "DIS_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區出院人日", "出院人日")),
@@ -1347,7 +1348,8 @@ private fun UniversalDrillDownCard(
                         val branch = selectedBranch ?: ""
                         val div = selectedDivision ?: ""
                         val targetLevel = if (config.hierarchy == DrillHierarchyType.BRANCH_FIRST) "DIVISION" else "BRANCH"
-                        val l2Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config) {
+                        val excludeVaccine = vm.filters.value.excludeVaccine
+                        val l2Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config, excludeVaccine) {
                             value = withContext(Dispatchers.IO) {
                                 val y = parsedYm.first
                                 val m = parsedYm.second
@@ -1359,7 +1361,8 @@ private fun UniversalDrillDownCard(
                                     dept = null,
                                     year = y,
                                     month = m,
-                                    showYoy = true
+                                    showYoy = true,
+                                    excludeVaccine = excludeVaccine
                                 )
                             }
                         }
@@ -1399,7 +1402,8 @@ private fun UniversalDrillDownCard(
                     UniversalDrillLevel.LEVEL_3 -> {
                         val branch = selectedBranch ?: ""
                         val div = selectedDivision ?: ""
-                        val l3Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config) {
+                        val excludeVaccine = vm.filters.value.excludeVaccine
+                        val l3Stats by produceState<List<DashboardRepo.UniversalDrillStat>?>(initialValue = null, branch, div, parsedYm, config, excludeVaccine) {
                             value = withContext(Dispatchers.IO) {
                                 val y = parsedYm.first
                                 val m = parsedYm.second
@@ -1411,7 +1415,8 @@ private fun UniversalDrillDownCard(
                                     dept = null,
                                     year = y,
                                     month = m,
-                                    showYoy = true
+                                    showYoy = true,
+                                    excludeVaccine = excludeVaccine
                                 )
                             }
                         }

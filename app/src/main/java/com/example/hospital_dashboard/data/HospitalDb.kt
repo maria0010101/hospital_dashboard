@@ -15,15 +15,25 @@ class HospitalDb(context: Context) {
         context.openOrCreateDatabase(DB_NAME, Context.MODE_PRIVATE, null)
 
     init {
-        // 首次開啟即建立 meta 表(尚未匯入時查詢用)
+        // 首次開啟即建立 meta 表(尚未匯入時查詢用)與 vaccine_service 防呆空表
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS _app_meta (key TEXT PRIMARY KEY, value TEXT)"
         )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS vaccine_service (" +
+                "ym TEXT, branch TEXT, dept_name TEXT, visit_type TEXT, " +
+                "opd_vaccine_screen_count TEXT, er_vaccine_screen_count TEXT, flu_vaccine_count TEXT, " +
+                "year TEXT, month TEXT, branch_name TEXT)"
+        )
+        try {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_opd_ym_b_d ON outpatient_service (ym, branch_name, dept)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_vac_ym_b_d ON vaccine_service (ym, branch_name, dept_name)")
+        } catch (_: Exception) {}
     }
 
     // ── 匯入 ──────────────────────────────────────────────
     /**
-     * 匯入活頁簿中 8 個目標工作表(整批單一交易，失敗自動回滾)。
+     * 匯入活頁簿中目標工作表(整批單一交易，失敗自動回滾)。
      * onProgress: (工作表名稱, 該表筆數, 目前第幾個表, 總表數)
      */
     fun importWorkbook(
@@ -46,6 +56,11 @@ class HospitalDb(context: Context) {
                 importTable(config, rows)
                 onProgress(config.sheet, rows.size, idx, total)
             }
+
+            try {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_opd_ym_b_d ON outpatient_service (ym, branch_name, dept)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_vac_ym_b_d ON vaccine_service (ym, branch_name, dept_name)")
+            } catch (_: Exception) {}
 
             // 應用程式 meta(資料更新日期等)
             db.execSQL(

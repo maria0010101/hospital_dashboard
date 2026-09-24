@@ -29,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
@@ -234,6 +235,11 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
     val size = currentAdaptiveSize()
     if (size.isCompact) {
         TabColumn {
+            VaccineFilterCard(
+                excludeVaccine = filters.excludeVaccine,
+                onCheckedChange = { vm.filters.value = filters.copy(excludeVaccine = it) }
+            )
+
             // 1. 門診人次月趨勢 / 各院區門診人次
             if (isSingleMonth) {
                 HBarCard(
@@ -288,6 +294,12 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
         }
     } else {
         TabGrid(columns = if (size.isExpanded) 3 else 2) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                VaccineFilterCard(
+                    excludeVaccine = filters.excludeVaccine,
+                    onCheckedChange = { vm.filters.value = filters.copy(excludeVaccine = it) }
+                )
+            }
             item {
                 if (isSingleMonth) {
                     HBarCard(vm = vm, title = "各院區門診人次$monthSuffix", data = brOpdBar, height = 240.dp, clickAction = HBarClick.BranchDept)
@@ -321,6 +333,55 @@ fun OpdTab(vm: DashboardViewModel, filters: DashboardRepo.Filters) {
 
     if (showFirstSheet) {
         FirstVisitSheet(vm, filters, onDismiss = { showFirstSheet = false })
+    }
+}
+
+/** 疫苗人次排除篩選滑動切換開關卡片 */
+@Composable
+private fun VaccineFilterCard(
+    excludeVaccine: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (excludeVaccine) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            }
+        ),
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!excludeVaccine) }
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(
+                    "💉 排除疫苗施打人次",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (excludeVaccine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "門急診及初診人次扣除同年月同院區同科別之疫苗施打人次",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            Switch(
+                checked = excludeVaccine,
+                onCheckedChange = onCheckedChange
+            )
+        }
     }
 }
 
