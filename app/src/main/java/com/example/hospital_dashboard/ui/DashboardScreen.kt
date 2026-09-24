@@ -4,16 +4,24 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import com.example.hospital_dashboard.ui.adaptive.AdaptiveSheet
+import com.example.hospital_dashboard.ui.adaptive.AdaptiveTabs
+import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
+import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
+import com.example.hospital_dashboard.ui.adaptive.isCompact
+import com.example.hospital_dashboard.ui.adaptive.isExpanded
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -69,6 +77,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
     val filters by vm.filters.collectAsState()
     val tabIndex by vm.tabIndex.collectAsState()
     var showFilters by rememberSaveable { mutableStateOf(false) }
+    val size = currentAdaptiveSize()
 
     Scaffold(
         topBar = {
@@ -79,43 +88,76 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                             "🏥 醫院營運儀表板",
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
-                            modifier = Modifier.basicMarquee()
+                            modifier = Modifier.adaptiveMarquee()
                         )
                         Text(
                             "📅 資料更新日期：${state.updateDate ?: "未知"}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            modifier = Modifier.basicMarquee()
+                            modifier = Modifier.adaptiveMarquee()
                         )
                     }
                 },
                 actions = {
-                    TextButton(onClick = { showFilters = true }) {
-                        Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}", maxLines = 1)
+                    if (size.isCompact) {
+                        TextButton(onClick = { showFilters = true }) {
+                            Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}", maxLines = 1)
+                        }
+                        TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換", maxLines = 1) }
                     }
-                    TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換", maxLines = 1) }
                 }
             )
         }
     ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
-        ) {
-            KpiRow(vm)
-            PrimaryScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 8.dp) {
-                listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🤖 AI 分析").forEachIndexed { i, t ->
-                    Tab(selected = tabIndex == i, onClick = { vm.tabIndex.value = i }, text = { Text(t) })
+        if (size.isCompact) {
+            Column(
+                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
+            ) {
+                KpiRow(vm)
+                AdaptiveTabs(
+                    size = size,
+                    selected = tabIndex,
+                    onSelect = { vm.tabIndex.value = it }
+                )
+                when (tabIndex) {
+                    0 -> OpdTab(vm, filters)
+                    1 -> IpdTab(vm, filters)
+                    2 -> BedTab(vm, filters)
+                    3 -> OtherTab(vm, filters)
+                    4 -> AnalysisTab(vm)
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        } else {
+            Row(
+                Modifier.padding(padding).fillMaxSize()
+            ) {
+                AdaptiveTabs(
+                    size = size,
+                    selected = tabIndex,
+                    onSelect = { vm.tabIndex.value = it },
+                    onShowFilters = { showFilters = true },
+                    onBackToFilePick = { vm.backToFilePick() },
+                    filterLabel = "⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}"
+                )
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                ) {
+                    KpiRow(vm)
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        when (tabIndex) {
+                            0 -> OpdTab(vm, filters)
+                            1 -> IpdTab(vm, filters)
+                            2 -> BedTab(vm, filters)
+                            3 -> OtherTab(vm, filters)
+                            4 -> Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                                AnalysisTab(vm)
+                            }
+                        }
+                    }
                 }
             }
-            when (tabIndex) {
-                0 -> OpdTab(vm, filters)
-                1 -> IpdTab(vm, filters)
-                2 -> BedTab(vm, filters)
-                3 -> OtherTab(vm, filters)
-                4 -> AnalysisTab(vm)
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -175,7 +217,7 @@ private fun KpiRow(vm: DashboardViewModel) {
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f).basicMarquee(),
+            modifier = Modifier.weight(1f).adaptiveMarquee(),
             maxLines = 1
         )
         Spacer(Modifier.width(6.dp))
@@ -183,12 +225,37 @@ private fun KpiRow(vm: DashboardViewModel) {
             color = MaterialTheme.colorScheme.primary, maxLines = 1)
     }
 
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(defs) { d ->
-            KpiCard(d)
+    val size = currentAdaptiveSize()
+    if (size.isCompact) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(defs) { d ->
+                KpiCard(d)
+            }
+        }
+    } else {
+        val cols = if (size.isExpanded) 5 else 3
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            defs.chunked(cols).forEach { rowDefs ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowDefs.forEach { d ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            KpiCard(d, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    repeat(cols - rowDefs.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 
@@ -217,7 +284,7 @@ private fun BranchSummarySheet(
     }
     val priorY = year.toIntOrNull()?.minus(1)?.toString() ?: year
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
@@ -301,9 +368,15 @@ private fun MetricLine(
 }
 
 @Composable
-private fun KpiCard(d: KpiDef) {
+private fun KpiCard(d: KpiDef, modifier: Modifier = Modifier) {
+    val size = currentAdaptiveSize()
+    val cardModifier = if (size.isCompact) {
+        modifier.widthIn(min = 116.dp, max = 150.dp)
+    } else {
+        modifier.fillMaxWidth()
+    }
     Card(
-        Modifier.widthIn(min = 116.dp, max = 150.dp),
+        cardModifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -312,14 +385,14 @@ private fun KpiCard(d: KpiDef) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                modifier = Modifier.basicMarquee()
+                modifier = Modifier.adaptiveMarquee()
             )
             Text(
                 d.fmt(d.value),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                modifier = Modifier.basicMarquee()
+                modifier = Modifier.adaptiveMarquee()
             )
             if (d.delta != null) {
                 val up = d.delta >= 0
@@ -329,7 +402,7 @@ private fun KpiCard(d: KpiDef) {
                     color = if (up) androidx.compose.ui.graphics.Color(0xFF1E8449)
                     else androidx.compose.ui.graphics.Color(0xFFC0392B),
                     maxLines = 1,
-                    modifier = Modifier.basicMarquee()
+                    modifier = Modifier.adaptiveMarquee()
                 )
             } else {
                 Text("—", style = MaterialTheme.typography.labelSmall,
@@ -369,7 +442,7 @@ private fun FilterSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {

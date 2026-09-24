@@ -1,9 +1,11 @@
 package com.example.hospital_dashboard.ui.adaptive
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 
 /**
@@ -51,3 +53,12 @@ fun <T> AdaptiveSize.pick(compactValue: T, mediumValue: T, expandedValue: T = me
     AdaptiveSize.Medium -> mediumValue
     AdaptiveSize.Expanded -> expandedValue
 }
+
+/** 平板自適應跑馬燈：Compact 保持動畫，大螢幕 Medium/Expanded 停用以節省重繪開銷。 */
+@Composable
+fun Modifier.adaptiveMarquee(): Modifier {
+    val size = currentAdaptiveSize()
+    return if (size.isCompact) this.basicMarquee() else this
+}
+
+fun Modifier.adaptiveMarquee(enabled: Boolean): Modifier = if (enabled) this.basicMarquee() else this
