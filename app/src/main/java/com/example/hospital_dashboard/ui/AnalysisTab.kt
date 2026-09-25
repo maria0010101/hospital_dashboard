@@ -161,17 +161,17 @@ fun AnalysisTab(vm: DashboardViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // ── 隱私聲明 ──
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))) {
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
             Column(Modifier.padding(10.dp)) {
                 Text(
                     "🔒 隱私保護：混淆對照表僅暫存於本機記憶體/快取，永不隨請求上傳；上傳至 AI 伺服器的只有混淆後資料。",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF1B5E20)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Text(
                     "🔄 對照表已自動涵蓋 ${anonymizer.size} 個名稱；新增院區/科別/醫師匯入後將自動納入（既有代號維持不變）。",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF1B5E20)
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
         }

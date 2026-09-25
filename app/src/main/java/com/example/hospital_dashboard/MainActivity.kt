@@ -31,8 +31,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
-            Hospital_dashboardTheme {
-                val vm: DashboardViewModel = viewModel()
+            val vm: DashboardViewModel = viewModel()
+            val isDarkMode by vm.isDarkMode.collectAsState()
+            Hospital_dashboardTheme(darkTheme = isDarkMode) {
                 val fontScaleLevel by vm.fontScaleLevel.collectAsState()
                 val fontMultiplier = DashboardViewModel.FONT_SCALE_MULTIPLIERS.getOrElse(fontScaleLevel) { 1.0f }
                 val baseDensity = LocalDensity.current

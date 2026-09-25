@@ -1,26 +1,33 @@
-# 醫院營運儀表板 (Hospital Operations Dashboard) — Android
+# 醫院營運儀表板 (Hospital Operations Dashboard) — Android & Windows 桌面雙平台
 
 [![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.0)
-[![Platform](https://img.shields.io/badge/platform-Android%207.0%2B-green.svg)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/kotlin-2.0%2B-purple.svg)](https://kotlinlang.org)
-[![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-brightgreen.svg)](https://developer.android.com/jetpack/compose)
+[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20Desktop-green.svg)](https://github.com/maria0010101/hospital_dashboard)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.2.10-purple.svg)](https://kotlinlang.org)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose-Multiplatform%20Desktop-brightgreen.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 
-將 Python/Streamlit 版醫院業務儀表板完整改製為 Android 原生離線分析應用程式。使用者僅需選取本機業務報表 Excel 檔（`業務資料-YYYYMMDD.xlsx`），即可在無網路環境下完成十餘萬列資料的高效解析、SQLite 交易存儲、核心營運指標視覺化呈現、多層次下鑽分析與本機脫敏 AI 輔助決策。
+將醫院業務儀表板完整改製為 Android 原生與 Windows 桌面原生（Compose Multiplatform Desktop）之跨平台離線分析應用程式。使用者僅需選取本機業務報表 Excel 檔（`業務資料-YYYYMMDD.xlsx`），即可在無網路環境下完成十餘萬列資料的高效解析、SQLite 交易存儲、核心營運指標視覺化呈現、多層次下鑽分析與本機脫敏 AI 輔助決策。
 
 ---
 
-## 📥 最新安裝檔下載 (v0.8.0)
+## 📥 最新安裝檔下載與線上編譯
 
-- **專案內建載點**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
-- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.0)
+- **Android 安裝檔 (APK)**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
+- **Windows 桌面版 (MSI / EXE / 免安裝 ZIP)**：透過 [GitHub Actions 線上編譯工作流程](https://github.com/maria0010101/hospital_dashboard/actions) 自動打包產出發布。
+- **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases)
 
 ---
 
 ## 🌟 核心特色
 
-1. **⚡ 零第三方依賴離線解析**
-   - 採用 Android 原生 `ZipFile` 結合 `XmlPullParser` 流式解析 xlsx 活頁簿，無引入大型肥大函式庫（如 Apache POI）。
-   - 支援 9 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量、差額病床業務資料、門診篩檢疫苗人次）十餘萬筆資料之原子交易匯入本機 SQLite（`HospitalDb`）。
+0. **🌙 全域深色模式支援 (Dark Mode)**
+   - 於「⚙ 篩選」功能選單中新增「深色模式」圓形滑動切換開關，提供符合 Material 3 規範之高對比深色主題，所有自繪圖表、卡片底色與文字色彩無縫自適應。
+1. **🖥️ Windows 桌面原生版本與 GitHub Actions 線上編譯**
+   - 透過 Compose Multiplatform (Kotlin JVM) 開發可於 Windows 環境流暢運作之桌面應用程式，並配置 GitHub Actions (`.github/workflows/build-windows.yml`) 自動完成跨平台編譯建置與發布包產出。
+2. **🧱 跨平台統一架構 (`:core` / `:app` / `:desktop`)**
+   - 將資料庫、XLSX 串流解析、業務指標查詢 (`DashboardRepo`)、統一報表引擎 (`report/**`)、脫敏混淆及 AI 客戶端抽取為純 JVM `:core` 模組，確保 Android 與 Windows 雙平台業務運算邏輯 100% 共用與計算口徑零差異。
+3. **⚡ 零第三方依賴離線解析**
+   - 採用原生 `ZipFile` 結合 `XmlPullParser` / `XMLStreamReader` (StAX) 流式解析 xlsx 活頁簿，無引入大型肥大函式庫。
+   - 支援 9 大業務工作表（門診、住院、病床、院外門診、會計、營運指標、醫師服務量、差額病床業務資料、門診篩檢疫苗人次）二十餘萬筆資料之原子交易匯入本機 SQLite。
 2. **🎨 純原生 Compose Canvas 自繪圖表**
    - 所有折線趨勢圖、單月重疊橫條圖、垂直柱狀圖、圓餅圖、佔床率熱力圖皆由 Jetpack Compose 原生 Canvas 幾何計算繪製，具備極佳的繪製效能與流暢的手勢縮放/拖曳互動。
 3. **🔍 10 項核心營運指標多維度下鑽（3層／4層）**

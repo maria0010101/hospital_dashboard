@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hospital_dashboard.data.DashboardRepo
 import com.example.hospital_dashboard.data.FileNameParser
+import com.example.hospital_dashboard.data.AndroidHospitalDb
 import com.example.hospital_dashboard.data.HospitalDb
 import com.example.hospital_dashboard.data.SheetConfigs
 import com.example.hospital_dashboard.data.XlsxReader
@@ -36,7 +37,7 @@ sealed interface UiState {
 
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
-    val db: HospitalDb by lazy { HospitalDb(getApplication()) }
+    val db: HospitalDb by lazy { AndroidHospitalDb(getApplication<Application>()) }
     val repo: DashboardRepo by lazy { DashboardRepo(db) }
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
@@ -65,6 +66,14 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         val clamped = level.coerceIn(0, 4)
         fontScaleLevel.value = clamped
         prefs.edit().putInt("font_scale_level", clamped).apply()
+    }
+
+    /** 深色模式狀態持久化 */
+    val isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
+
+    fun setDarkMode(enabled: Boolean) {
+        isDarkMode.value = enabled
+        prefs.edit().putBoolean("dark_mode", enabled).apply()
     }
 
     companion object {

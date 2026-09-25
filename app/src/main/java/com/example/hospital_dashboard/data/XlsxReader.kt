@@ -24,7 +24,7 @@ object XlsxReader {
     /** 開啟活頁簿，可依工作表名稱逐表讀取(避免一次載入全部列)。 */
     fun openBook(file: File): Book = Book(ZipFile(file))
 
-    class Book internal constructor(private val zip: ZipFile) : AutoCloseable {
+    class Book internal constructor(private val zip: ZipFile) : XlsxBook {
         private val sheetRid: List<Pair<String, String>> =
             parseWorkbookSheets(zip.getEntryText("xl/workbook.xml"))
         private val ridTarget: Map<String, String> =
@@ -32,12 +32,12 @@ object XlsxReader {
         private val shared: List<String> =
             parseSharedStrings(zip.getEntryText("xl/sharedStrings.xml"))
 
-        fun sheetNames(): List<String> = sheetRid.map { it.first }
+        override fun sheetNames(): List<String> = sheetRid.map { it.first }
 
-        fun hasSheet(name: String): Boolean = sheetRid.any { it.first == name }
+        override fun hasSheet(name: String): Boolean = sheetRid.any { it.first == name }
 
         /** 讀取單一工作表全部列；每列為 List<String?>。 */
-        fun readRows(sheetName: String): List<List<String?>> {
+        override fun readRows(sheetName: String): List<List<String?>> {
             val rid = sheetRid.firstOrNull { it.first == sheetName }?.second ?: return emptyList()
             val target = ridTarget[rid] ?: return emptyList()
             // Target 可能為相對路徑(worksheets/sheet1.xml)或絕對路徑(/xl/worksheets/sheet1.xml，

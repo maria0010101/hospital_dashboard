@@ -1,5 +1,7 @@
 package com.example.hospital_dashboard.data
 
+import java.util.Locale
+
 /** 折線圖單一序列(虛線用於去年同期)。 */
 data class LineSeries(val name: String, val values: List<Double?>, val dashed: Boolean = false)
 
@@ -70,30 +72,30 @@ data class BedYoyRow(val category: String, val curr: Double, val prev: Double) {
 object Fmt {
     fun compact(v: Double): String = when {
         v.isNaN() -> "-"
-        kotlin.math.abs(v) >= 1e8 -> String.format("%.2f億", v / 1e8)
-        kotlin.math.abs(v) >= 1e4 -> String.format("%.1f萬", v / 1e4)
-        else -> String.format("%,.0f", v)
+        kotlin.math.abs(v) >= 1e8 -> String.format(Locale.TAIWAN, "%.2f億", v / 1e8)
+        kotlin.math.abs(v) >= 1e4 -> String.format(Locale.TAIWAN, "%.1f萬", v / 1e4)
+        else -> String.format(Locale.TAIWAN, "%,.0f", v)
     }
 
     fun money(v: Double): String = when {
         v.isNaN() -> "-"
-        kotlin.math.abs(v) >= 1e8 -> String.format("%.2f億", v / 1e8)
-        kotlin.math.abs(v) >= 1e4 -> String.format("%.1f萬", v / 1e4)
-        else -> String.format("%,.0f", v)
+        kotlin.math.abs(v) >= 1e8 -> String.format(Locale.TAIWAN, "%.2f億", v / 1e8)
+        kotlin.math.abs(v) >= 1e4 -> String.format(Locale.TAIWAN, "%.1f萬", v / 1e4)
+        else -> String.format(Locale.TAIWAN, "%,.0f", v)
     }
 
     /** 金額以「千元」為單位顯示。 */
     fun moneyK(v: Double): String =
-        if (v.isNaN()) "-" else String.format("%,.0f", v / 1000.0)
+        if (v.isNaN()) "-" else String.format(Locale.TAIWAN, "%,.0f", v / 1000.0)
 
     /** 計數以「千人」為單位顯示（整數＋千）。 */
     fun k(v: Double): String =
-        if (v.isNaN()) "-" else String.format("%,.0f千", v / 1000.0)
+        if (v.isNaN()) "-" else String.format(Locale.TAIWAN, "%,.0f千", v / 1000.0)
 
-    fun percent(v: Double): String = String.format("%.1f%%", v)
+    fun percent(v: Double): String = String.format(Locale.TAIWAN, "%.1f%%", v)
 
-    fun int(v: Double): String = String.format("%,.0f", v)
+    fun int(v: Double): String = String.format(Locale.TAIWAN, "%,.0f", v)
 
     fun signed(v: Double, suffix: String = ""): String =
-        String.format("%+.1f%s", v, suffix)
+        String.format(Locale.TAIWAN, "%+.1f%s", v, suffix)
 }

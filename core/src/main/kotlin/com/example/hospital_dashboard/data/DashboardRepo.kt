@@ -7,7 +7,7 @@ package com.example.hospital_dashboard.data
 class DashboardRepo(private val db: HospitalDb) {
 
     data class Filters(
-        val years: List<String>,          // 民國年(字串，與 DB 一致)
+        val years: List<String> = emptyList(),          // 民國年(字串，與 DB 一致)
         val months: List<String> = emptyList(),    // 空 = 全選
         val branches: List<String> = emptyList(),  // 空 = 全選
         val deptDivs: List<String> = emptyList(),  // 空 = 全選(僅套用門診/住院)

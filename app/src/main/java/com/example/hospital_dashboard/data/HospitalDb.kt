@@ -9,7 +9,7 @@ import java.io.File
  * 醫院業務資料庫：匯入 xlsx 各工作表並提供儀表板查詢。
  * 資料表結構與 Python 版 hospital_data_tool.py 一致(全部 TEXT 欄位)。
  */
-class HospitalDb(context: Context) {
+class AndroidHospitalDb(context: Context) : HospitalDb {
 
     private val db: SQLiteDatabase =
         context.openOrCreateDatabase(DB_NAME, Context.MODE_PRIVATE, null)
@@ -36,8 +36,8 @@ class HospitalDb(context: Context) {
      * 匯入活頁簿中目標工作表(整批單一交易，失敗自動回滾)。
      * onProgress: (工作表名稱, 該表筆數, 目前第幾個表, 總表數)
      */
-    fun importWorkbook(
-        book: XlsxReader.Book,
+    override fun importWorkbook(
+        book: XlsxBook,
         updateDateDisplay: String?,
         sourceFile: String,
         onProgress: (String, Int, Int, Int) -> Unit
@@ -102,20 +102,20 @@ class HospitalDb(context: Context) {
     }
 
     // ── Meta ──────────────────────────────────────────────
-    fun setMeta(key: String, value: String) {
+    override fun setMeta(key: String, value: String) {
         db.execSQL(
             "INSERT OR REPLACE INTO _app_meta (key, value) VALUES (?, ?)",
             arrayOf(key, value)
         )
     }
 
-    fun getMeta(key: String): String? {
+    override fun getMeta(key: String): String? {
         db.rawQuery("SELECT value FROM _app_meta WHERE key=?", arrayOf(key)).use { c ->
             return if (c.moveToFirst()) c.getString(0) else null
         }
     }
 
-    fun hasImportedData(): Boolean {
+    override fun hasImportedData(): Boolean {
         if (getMeta("imported_at") == null) return false
         // 所有目標表都必須存在：舊版資料庫缺少新表(如 physician_service)時視為未匯入，
         // 避免 tableRowCounts / 查詢對不存在的表崩潰。
@@ -129,7 +129,7 @@ class HospitalDb(context: Context) {
     }
 
     /** 各表筆數(供匯入完成頁顯示；表不存在時回 0)。 */
-    fun tableRowCounts(): List<Pair<String, Long>> {
+    override fun tableRowCounts(): List<Pair<String, Long>> {
         return SheetConfigs.ALL.map { cfg ->
             val exists = db.rawQuery(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
@@ -145,7 +145,7 @@ class HospitalDb(context: Context) {
 
     // ── 通用查詢 ──────────────────────────────────────────
     /** 執行查詢，回傳列資料；每列為 List<Any?> (Long/Double/String/null)。 */
-    fun query(sql: String, params: Array<Any?> = arrayOf()): List<List<Any?>> {
+    override fun query(sql: String, params: Array<Any?>): List<List<Any?>> {
         val out = mutableListOf<List<Any?>>()
         db.rawQuery(sql, params.map { it?.toString() }.toTypedArray()).use { c ->
             val n = c.columnCount
@@ -167,13 +167,13 @@ class HospitalDb(context: Context) {
         else -> null
     }
 
-    fun queryDouble(sql: String, params: Array<Any?> = arrayOf()): Double? {
+    override fun queryDouble(sql: String, params: Array<Any?>): Double? {
         db.rawQuery(sql, params.map { it?.toString() }.toTypedArray()).use { c ->
             return if (c.moveToFirst() && !c.isNull(0)) c.getDouble(0) else null
         }
     }
 
-    fun close() = db.close()
+    override fun close() = db.close()
 
     companion object {
         const val DB_NAME = "hospital_data.db"

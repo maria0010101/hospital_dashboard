@@ -1,83 +1,42 @@
-package com.example.hospital_dashboard.ui
+package com.example.hospital_dashboard.desktop.ui
 
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import com.example.hospital_dashboard.ui.adaptive.AdaptiveSheet
-import com.example.hospital_dashboard.ui.adaptive.AdaptiveTabs
-import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
-import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
-import com.example.hospital_dashboard.ui.adaptive.isCompact
-import com.example.hospital_dashboard.ui.adaptive.isExpanded
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.PrimaryScrollableTabRow
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.hospital_dashboard.DashboardViewModel
-import kotlin.math.roundToInt
-import com.example.hospital_dashboard.UiState
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.hospital_dashboard.data.DashboardRepo
 import com.example.hospital_dashboard.data.Fmt
 import com.example.hospital_dashboard.data.KpiSet
+import com.example.hospital_dashboard.desktop.DesktopViewModel
+import com.example.hospital_dashboard.desktop.UiState
+import com.example.hospital_dashboard.desktop.ui.adaptive.*
+import com.example.hospital_dashboard.desktop.ui.charts.ZoomChartScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
+
+val DASHBOARD_TABS = listOf("🚪 門急診", "🛏️ 住院", "🏥 病床", "📋 其他", "🤖 AI 分析")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
+fun DashboardScreen(vm: DesktopViewModel, state: UiState.Ready) {
     val filters by vm.filters.collectAsState()
     val tabIndex by vm.tabIndex.collectAsState()
+    val zoomChart by vm.zoomChart.collectAsState()
+    val isDarkMode by vm.isDarkMode.collectAsState()
     var showFilters by rememberSaveable { mutableStateOf(false) }
-    val size = currentAdaptiveSize()
 
     Scaffold(
         topBar = {
@@ -85,76 +44,74 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                 title = {
                     Column {
                         Text(
-                            "🏥 醫院營運儀表板",
+                            "🏥 醫院營運儀表板 (桌面版)",
                             fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.adaptiveMarquee()
+                            maxLines = 1
                         )
                         Text(
-                            "📅 資料更新日期：${state.updateDate ?: "未知"}",
+                            "📅 資料更新日期：${state.updateDate ?: "未知"} ｜ 來源檔：${state.sourceFile ?: "本機資料庫"}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            modifier = Modifier.adaptiveMarquee()
+                            maxLines = 1
                         )
                     }
                 },
                 actions = {
-                    if (size.isCompact) {
-                        TextButton(onClick = { showFilters = true }) {
-                            Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}", maxLines = 1)
-                        }
-                        TextButton(onClick = { vm.backToFilePick() }) { Text("🔄 更換", maxLines = 1) }
+                    TextButton(onClick = { vm.setDarkMode(!isDarkMode) }) {
+                        Text(if (isDarkMode) "☀️ 淺色" else "🌙 深色", maxLines = 1)
+                    }
+                    TextButton(onClick = { showFilters = true }) {
+                        Text("⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}${if (filters.excludeVaccine) " [排疫苗]" else ""}", maxLines = 1)
+                    }
+                    TextButton(onClick = { vm.backToFilePick() }) {
+                        Text("🔄 更換檔案", maxLines = 1)
                     }
                 }
             )
         }
     ) { padding ->
-        if (size.isCompact) {
+        Row(
+            Modifier.padding(padding).fillMaxSize()
+        ) {
+            NavigationRail(
+                modifier = Modifier.width(96.dp),
+                header = {
+                    Spacer(Modifier.height(8.dp))
+                    Text("🏥", style = MaterialTheme.typography.titleLarge)
+                }
+            ) {
+                Spacer(Modifier.height(12.dp))
+                DASHBOARD_TABS.forEachIndexed { i, t ->
+                    val emoji = t.takeWhile { !it.isWhitespace() }
+                    val label = t.dropWhile { !it.isWhitespace() }.trim()
+                    NavigationRailItem(
+                        selected = tabIndex == i,
+                        onClick = { vm.tabIndex.value = i },
+                        icon = { Text(emoji) },
+                        label = { Text(label, maxLines = 1) }
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showFilters = true }) {
+                    Text("⚙ 篩選", maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                }
+                TextButton(onClick = { vm.backToFilePick() }) {
+                    Text("🔄 更換", maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             Column(
-                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
+                Modifier.weight(1f).fillMaxHeight()
             ) {
                 KpiRow(vm)
-                AdaptiveTabs(
-                    size = size,
-                    selected = tabIndex,
-                    onSelect = { vm.tabIndex.value = it }
-                )
-                when (tabIndex) {
-                    0 -> OpdTab(vm, filters)
-                    1 -> IpdTab(vm, filters)
-                    2 -> BedTab(vm, filters)
-                    3 -> OtherTab(vm, filters)
-                    4 -> AnalysisTab(vm)
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        } else {
-            Row(
-                Modifier.padding(padding).fillMaxSize()
-            ) {
-                AdaptiveTabs(
-                    size = size,
-                    selected = tabIndex,
-                    onSelect = { vm.tabIndex.value = it },
-                    onShowFilters = { showFilters = true },
-                    onBackToFilePick = { vm.backToFilePick() },
-                    filterLabel = "⚙ 篩選${if (filters.showHospitalTotal) " (全院)" else ""}"
-                )
-                Column(
-                    Modifier.weight(1f).fillMaxHeight()
-                ) {
-                    KpiRow(vm)
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        when (tabIndex) {
-                            0 -> OpdTab(vm, filters)
-                            1 -> IpdTab(vm, filters)
-                            2 -> BedTab(vm, filters)
-                            3 -> OtherTab(vm, filters)
-                            4 -> Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                                AnalysisTab(vm)
-                            }
-                        }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    when (tabIndex) {
+                        0 -> OpdTab(vm, filters)
+                        1 -> IpdTab(vm, filters)
+                        2 -> BedTab(vm, filters)
+                        3 -> OtherTab(vm, filters)
+                        4 -> AnalysisTab(vm)
                     }
                 }
             }
@@ -164,13 +121,24 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
     if (showFilters) {
         FilterSheet(vm, filters, onDismiss = { showFilters = false })
     }
+
+    zoomChart?.let { content ->
+        Dialog(
+            onDismissRequest = { vm.closeZoom() },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                ZoomChartScreen(vm, content, onClose = { vm.closeZoom() })
+            }
+        }
+    }
 }
 
-// ── KPI 列(固定最新月份 + 去年同期，與圖表篩選分離) ──
+// ── KPI 列 ──
 private data class KpiDef(val title: String, val value: Double, val delta: Double?, val fmt: (Double) -> String)
 
 @Composable
-private fun KpiRow(vm: DashboardViewModel) {
+private fun KpiRow(vm: DesktopViewModel) {
     val month by produceState<Pair<String, String>?>(null) {
         value = withContext(Dispatchers.IO) { vm.repo.latestMonth() }
     }
@@ -198,61 +166,46 @@ private fun KpiRow(vm: DashboardViewModel) {
         KpiDef("總診次", k.sessions, delta(k.sessions, prev?.sessions), Fmt::compact),
         KpiDef("住院人次", k.ipdAdm, delta(k.ipdAdm, prev?.ipdAdm), Fmt::compact),
         KpiDef("住院人日", k.ipdDays, delta(k.ipdDays, prev?.ipdDays), Fmt::compact),
-        KpiDef("平均佔床率", k.occ, delta(k.occ, prev?.occ), Fmt::percent),
+        KpiDef("佔床率", k.occ, if (prev?.occ != null) k.occ - prev!!.occ else null, Fmt::percent),
         KpiDef("院外門診", k.offsite, delta(k.offsite, prev?.offsite), Fmt::compact),
-        KpiDef("洗腎人次", k.dialysis, delta(k.dialysis, prev?.dialysis), Fmt::compact),
-        KpiDef("健檢人次", k.checkup, delta(k.checkup, prev?.checkup), Fmt::compact),
+        KpiDef("血液透析", k.dialysis, delta(k.dialysis, prev?.dialysis), Fmt::compact),
+        KpiDef("健檢人次", k.checkup, delta(k.checkup, prev?.checkup), Fmt::compact)
     )
 
-    // 標題列：最新月份 + 點擊查看各院區
-    Row(
-        Modifier
+    Card(
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = m != null) { showSheet = true }
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clickable { showSheet = true },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Text(
-            "📅 最新月份 ${m?.let { formatMonth(it.first, it.second) } ?: "—"} 與去年同期比較",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f).adaptiveMarquee(),
-            maxLines = 1
-        )
-        Spacer(Modifier.width(6.dp))
-        Text("🔍 各院區明細", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary, maxLines = 1)
-    }
-
-    val size = currentAdaptiveSize()
-    if (size.isCompact) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(defs) { d ->
-                KpiCard(d)
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "📌 全院營運概況 ｜ 最新月份：${m?.let { formatMonth(it.first, it.second) } ?: "載入中..."}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "點擊查看各院區明細 ▸",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
-        }
-    } else {
-        val cols = if (size.isExpanded) 5 else 3
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            defs.chunked(cols).forEach { rowDefs ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowDefs.forEach { d ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            KpiCard(d, modifier = Modifier.fillMaxWidth())
-                        }
-                    }
-                    repeat(cols - rowDefs.size) {
-                        Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                defs.forEach { d ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        KpiCard(d, modifier = Modifier.fillMaxWidth())
                     }
                 }
             }
@@ -270,11 +223,9 @@ private fun formatMonth(year: String, month: String): String {
     return "${y}年${mo.toString().padStart(2, '0')}月 (${y + 1911}/${mo.toString().padStart(2, '0')})"
 }
 
-// ── 各院區單月明細(含去年同期)底部面板 ─────────────
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BranchSummarySheet(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     year: String,
     month: String,
     onDismiss: () -> Unit
@@ -309,8 +260,7 @@ private fun BranchSummarySheet(
 private fun BranchStatCard(s: DashboardRepo.BranchMonthStat) {
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleSmall)
+            Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(2.dp))
             MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
             MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
@@ -369,54 +319,40 @@ private fun MetricLine(
 
 @Composable
 private fun KpiCard(d: KpiDef, modifier: Modifier = Modifier) {
-    val size = currentAdaptiveSize()
-    val cardModifier = if (size.isCompact) {
-        modifier.widthIn(min = 116.dp, max = 150.dp)
-    } else {
-        modifier.fillMaxWidth()
-    }
     Card(
-        cardModifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Text(
-                d.title,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                modifier = Modifier.adaptiveMarquee()
-            )
-            Text(
-                d.fmt(d.value),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                modifier = Modifier.adaptiveMarquee()
-            )
+        Column(
+            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(d.title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(2.dp))
+            Text(d.fmt(d.value), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            val isPp = d.title.contains("佔床率")
             if (d.delta != null) {
                 val up = d.delta >= 0
                 Text(
-                    String.format("%+.1f%%", d.delta),
+                    (if (up) "▲ " else "▼ ") +
+                        (if (isPp) String.format("%+.1fpp", d.delta) else String.format("%+.1f%%", d.delta)),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (up) androidx.compose.ui.graphics.Color(0xFF1E8449)
-                    else androidx.compose.ui.graphics.Color(0xFFC0392B),
-                    maxLines = 1,
-                    modifier = Modifier.adaptiveMarquee()
+                    fontWeight = FontWeight.Bold,
+                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
                 )
             } else {
-                Text("—", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
+                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
         }
     }
 }
 
-// ── 篩選底部面板 ─────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+// ── 篩選對話框 ──
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FilterSheet(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     filters: DashboardRepo.Filters,
     onDismiss: () -> Unit
 ) {
@@ -431,6 +367,9 @@ private fun FilterSheet(
     var depts by remember { mutableStateOf(filters.depts) }
     var yoy by remember { mutableStateOf(filters.showYoy) }
     var showHospitalTotal by remember { mutableStateOf(filters.showHospitalTotal) }
+    var excludeVaccine by remember { mutableStateOf(filters.excludeVaccine) }
+    var isDark by remember { mutableStateOf(vm.isDarkMode.value) }
+    var fontLevel by remember { mutableIntStateOf(vm.fontScaleLevel.value) }
 
     val yearOpts = remember { vm.availableYears() }
     val monthOpts = remember { vm.availableMonths() }
@@ -446,52 +385,42 @@ private fun FilterSheet(
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
-            Text("⚙ 篩選條件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("⚙ 篩選條件設定", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
 
             SectionLabel("📅 年度（至少一項）")
             if (years.isEmpty()) {
-                Text("⚠️ 請至少選擇一個年度", color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall)
+                Text("⚠️ 請至少選擇一個年度", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
             }
             ChipFlow(yearOpts.map { it to it }, years.toSet()) { opt ->
                 years = if (opt in years) years - opt else years + opt
             }
 
             SectionLabel("📆 月份")
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = monthsAll, onClick = {
                     if (monthsAll) {
-                        // 取消全選：展開選項(未勾選=全部)，點選即加入
-                        monthsAll = false
-                        months = emptyList()
+                        monthsAll = false; months = emptyList()
                     } else {
                         monthsAll = true; months = emptyList()
                     }
                 }, label = { Text("全選") })
-                Spacer(Modifier.width(6.dp))
-                if (!monthsAll) {
-                    Text("點選月份取消勾選即排除", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline)
-                }
             }
             if (!monthsAll) {
                 ChipFlow(monthOpts.map { it to "${it}月" }, months.toSet()) { opt ->
                     months = if (opt in months) months - opt else months + opt
-                    if (months.isEmpty()) monthsAll = true // 全部取消 → 回到全選
+                    if (months.isEmpty()) monthsAll = true
                 }
             }
 
             SectionLabel("🏢 院區")
             Row(
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(selected = branchesAll && !showHospitalTotal, onClick = {
                     if (branchesAll && !showHospitalTotal) {
-                        // 取消全選：展開選項(未勾選=全部)，點選即加入
-                        branchesAll = false
-                        branches = emptyList()
+                        branchesAll = false; branches = emptyList()
                     } else {
                         branchesAll = true; branches = emptyList()
                     }
@@ -499,9 +428,7 @@ private fun FilterSheet(
                 }, label = { Text("全選") })
                 FilterChip(
                     selected = showHospitalTotal,
-                    onClick = {
-                        showHospitalTotal = !showHospitalTotal
-                    },
+                    onClick = { showHospitalTotal = !showHospitalTotal },
                     label = { Text("顯示全院") }
                 )
             }
@@ -513,12 +440,10 @@ private fun FilterSheet(
             }
 
             SectionLabel("🏥 部別")
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = divsAll, onClick = {
                     if (divsAll) {
-                        // 取消全選：展開選項(未勾選=全部)，點選即加入
-                        divsAll = false
-                        divs = emptyList()
+                        divsAll = false; divs = emptyList()
                     } else {
                         divsAll = true; divs = emptyList()
                     }
@@ -532,12 +457,10 @@ private fun FilterSheet(
             }
 
             SectionLabel("🩺 科別")
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = deptsAll, onClick = {
                     if (deptsAll) {
-                        // 取消全選：展開選項(未勾選=全部)，點選即加入
-                        deptsAll = false
-                        depts = emptyList()
+                        deptsAll = false; depts = emptyList()
                     } else {
                         deptsAll = true; depts = emptyList()
                     }
@@ -554,18 +477,27 @@ private fun FilterSheet(
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("顯示去年同期比較", style = MaterialTheme.typography.bodyMedium)
                 Switch(checked = yoy, onCheckedChange = { yoy = it })
             }
 
-            SectionLabel("🌙 深色模式")
-            var isDark by remember { mutableStateOf(vm.isDarkMode.value) }
+            SectionLabel("💉 排除疫苗施打人次")
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("排除門急診篩檢與流感疫苗施打人次", style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = excludeVaccine, onCheckedChange = { excludeVaccine = it })
+            }
+
+            SectionLabel("🌙 深色模式")
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("深色配色模式", style = MaterialTheme.typography.bodyMedium)
                 Switch(
@@ -578,7 +510,6 @@ private fun FilterSheet(
             }
 
             SectionLabel("🔤 字型大小設定")
-            var fontLevel by remember { mutableIntStateOf(vm.fontScaleLevel.value) }
             Card(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
@@ -590,70 +521,39 @@ private fun FilterSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("字型大小", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = "${DashboardViewModel.FONT_SCALE_NAMES[fontLevel]} (${String.format("%.1fx", DashboardViewModel.FONT_SCALE_MULTIPLIERS[fontLevel])})",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("A", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
-                        Slider(
-                            value = fontLevel.toFloat(),
-                            onValueChange = {
-                                val newLevel = it.roundToInt().coerceIn(0, 4)
-                                fontLevel = newLevel
-                                vm.setFontScaleLevel(newLevel)
-                            },
-                            valueRange = 0f..4f,
-                            steps = 3,
-                            modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                        Text(
+                            "${DesktopViewModel.FONT_SCALE_NAMES[fontLevel]} (${String.format("%.1fx", DesktopViewModel.FONT_SCALE_MULTIPLIERS[fontLevel])})",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Text("A", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        DashboardViewModel.FONT_SCALE_NAMES.forEachIndexed { idx, name ->
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (fontLevel == idx) FontWeight.Bold else FontWeight.Normal,
-                                color = if (fontLevel == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.clickable {
-                                    fontLevel = idx
-                                    vm.setFontScaleLevel(idx)
-                                }
-                            )
-                        }
-                    }
+                    Slider(
+                        value = fontLevel.toFloat(),
+                        onValueChange = {
+                            val newLevel = it.roundToInt().coerceIn(0, 4)
+                            fontLevel = newLevel
+                            vm.setFontScaleLevel(newLevel)
+                        },
+                        valueRange = 0f..4f,
+                        steps = 3
+                    )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             HorizontalDivider()
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
                     onClick = {
-                        years = vm.defaultYears(yearOpts) // 預設排除 113，取 114、115
+                        years = vm.defaultYears(yearOpts)
                         monthsAll = true; months = emptyList()
                         branchesAll = true; branches = emptyList()
                         divsAll = true; divs = emptyList()
                         deptsAll = true; depts = emptyList()
                         showHospitalTotal = false
+                        excludeVaccine = false
                         fontLevel = 0
                         vm.setFontScaleLevel(0)
                         isDark = false
@@ -663,7 +563,7 @@ private fun FilterSheet(
                 ) { Text("重設") }
                 Button(
                     onClick = {
-                        if (years.isEmpty()) return@Button // 需至少一個年度
+                        if (years.isEmpty()) return@Button
                         vm.setFontScaleLevel(fontLevel)
                         vm.setDarkMode(isDark)
                         vm.filters.value = DashboardRepo.Filters(
@@ -674,7 +574,7 @@ private fun FilterSheet(
                             depts = if (deptsAll) emptyList() else depts,
                             showYoy = yoy,
                             showHospitalTotal = showHospitalTotal,
-                            excludeVaccine = filters.excludeVaccine
+                            excludeVaccine = excludeVaccine
                         )
                         onDismiss()
                     },

@@ -24,3 +24,18 @@ local.properties
 *.db-shm
 *.sqlite
 *.sqlite3
+
+# 建置產出與發布目錄
+build/
+**/build/
+dist/
+*.msi
+*.exe
+*.zip
+
+# 本機設定與暫存
+ai_config.json
+anonymizer_map.json
+settings.json
+hospital_data.db
+

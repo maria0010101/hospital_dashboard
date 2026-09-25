@@ -1,4 +1,4 @@
-package com.example.hospital_dashboard.ui
+package com.example.hospital_dashboard.desktop.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

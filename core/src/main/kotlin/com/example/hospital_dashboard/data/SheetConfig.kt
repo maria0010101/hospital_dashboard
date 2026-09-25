@@ -166,7 +166,7 @@ object SheetConfigs {
     fun bySheet(name: String): SheetConfig? = ALL.firstOrNull { it.sheet == name }
 
     /** 檢查活頁簿是否包含全部目標工作表，回傳缺少者。 */
-    fun allMissing(book: XlsxReader.Book): List<String> {
+    fun allMissing(book: XlsxBook): List<String> {
         val names = book.sheetNames().toSet()
         return ALL.map { it.sheet }.filter { it !in names }
     }

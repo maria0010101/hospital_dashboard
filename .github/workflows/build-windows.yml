@@ -1,0 +1,77 @@
+name: Build Windows Application
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build & Package Windows Desktop App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: git update-index --chmod=+x gradlew
+        shell: bash
+
+      - name: Run Core & Desktop Unit Tests
+        run: ./gradlew :core:test :desktop:test --no-daemon
+
+      - name: Build Windows Installers (MSI & EXE)
+        run: ./gradlew :desktop:packageDistributionForCurrentOS --no-daemon
+
+      - name: Create Portable Distributable Package
+        run: ./gradlew :desktop:createDistributable --no-daemon
+
+      - name: Package Portable ZIP
+        shell: pwsh
+        run: |
+          $distPath = "desktop/build/compose/binaries/main/app/HospitalDashboard"
+          if (Test-Path $distPath) {
+            New-Item -ItemType Directory -Force -Path "dist"
+            Compress-Archive -Path "$distPath/*" -DestinationPath "dist/HospitalDashboard-windows-x64-portable.zip" -Force
+            Write-Host "Portable ZIP created successfully at dist/HospitalDashboard-windows-x64-portable.zip"
+          } else {
+            Write-Warning "Distributable path not found: $distPath"
+          }
+
+      - name: Collect Windows Installers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist"
+          Get-ChildItem -Path "desktop/build/compose/binaries/main/msi/*.msi", "desktop/build/compose/binaries/main/exe/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName -Destination "dist/"
+            Write-Host "Copied installer: $($_.Name)"
+          }
+
+      - name: Upload Windows Application Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: HospitalDashboard-Windows-Release
+          path: dist/*
+          if-no-files-found: warn
+
+      - name: Release Assets (On Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

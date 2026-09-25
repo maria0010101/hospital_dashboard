@@ -1,14 +1,7 @@
-package com.example.hospital_dashboard.ui.charts
+package com.example.hospital_dashboard.desktop.ui.charts
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import androidx.activity.compose.BackHandler
-import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
-import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
-import com.example.hospital_dashboard.ui.adaptive.isAtLeastMedium
-import com.example.hospital_dashboard.ui.adaptive.isCompact
-import com.example.hospital_dashboard.ui.adaptive.pick
+import com.example.hospital_dashboard.desktop.DesktopViewModel
+import com.example.hospital_dashboard.desktop.ui.adaptive.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -59,7 +52,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -72,7 +64,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -85,7 +76,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.hospital_dashboard.DashboardViewModel
 import com.example.hospital_dashboard.data.BarSegment
 import com.example.hospital_dashboard.data.DashboardRepo
 import com.example.hospital_dashboard.data.Fmt
@@ -232,17 +222,7 @@ fun EmptyHint(text: String = "📭 無資料") {
 // ── 全螢幕圖表檢視(可縮放，依手機顯示方向呈現，不固定為橫向或縱向) ─────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ZoomChartScreen(vm: DashboardViewModel, content: ChartContent, onClose: () -> Unit) {
-    val context = LocalContext.current
-    val activity = context.findActivity()
-
-    // 依手機顯示方向呈現，不固定為橫向顯示或縱向顯示；重設為跟隨系統方向
-    DisposableEffect(Unit) {
-        activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        onDispose {
-            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-    }
+fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
 
     // 標題列在上、圖表在下：兩者完全不重疊，避免手勢偵測干擾關閉按鈕
@@ -891,7 +871,7 @@ internal fun parseYmFromTitleOrFilters(title: String, filters: DashboardRepo.Fil
 /** 通用多維度下鑽詳細資訊卡片 */
 @Composable
 private fun UniversalDrillDownCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     info: PointInfo,
     config: DrillMetricConfig,
     yFormatter: (Double) -> String,
@@ -1764,7 +1744,7 @@ private fun DrillStatCard(
 /** 科別門診各院區明細卡片(點擊「科別門診人次 vs 診次」科別列顯示)。 */
 @Composable
 private fun DeptOpdCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     dept: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -1822,7 +1802,7 @@ private fun DeptOpdCard(
 /** 院區門診各科別明細卡片(點擊「各院區門診人次」院區列顯示)。 */
 @Composable
 private fun BranchDeptCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     branch: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -1902,7 +1882,7 @@ private fun BranchDeptCard(
 /** 部別門診各科別明細卡片(點擊「各部別門診人次」部別列或放大細項顯示)。 */
 @Composable
 private fun DivDeptCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     div: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -1977,7 +1957,7 @@ private fun DivDeptCard(
 /** 部別住院各科別明細卡片(點擊「住院人日月趨勢（依部別）」部別列或放大細項顯示)。 */
 @Composable
 private fun IpdDivDeptCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     div: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -2052,7 +2032,7 @@ private fun IpdDivDeptCard(
 /** 院外門診部各明細卡片(點擊院外門診部服務量院區列或放大細項顯示)。 */
 @Composable
 private fun OffsiteBranchCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     branch: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -2127,7 +2107,7 @@ private fun OffsiteBranchCard(
 /** 病床明細卡：某院區實際佔床率近三月趨勢 + 去年同期（點病床橫條後顯示）。 */
 @Composable
 private fun BedBranchCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     branch: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -2203,7 +2183,7 @@ private fun BedBranchCard(
 /** 病床類別明細卡：點去年同期比較表的類別列 → 各院區實際佔床率(近三個月 + 去年同月)。 */
 @Composable
 private fun BedCategoryCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     category: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -2275,7 +2255,7 @@ private fun BedCategoryCard(
 /** 多指標明細浮層卡：指定月份(各院區)或指定院區的多指標數值＋近三個月趨勢＋去年同期。 */
 @Composable
 private fun MetricOverlayCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     def: BranchMetricDef,
     ym: Int?,      // 指定月份(null = 以錨點月帶入，用於院區收入列)
     branch: String?, // null = 列出全院區
@@ -2396,7 +2376,7 @@ private fun Recent3Line(
 }
 
 /** 篩選區間說明文字。 */
-private fun periodNoteOf(vm: DashboardViewModel): String {
+private fun periodNoteOf(vm: DesktopViewModel): String {
     val years = vm.filters.value.years.mapNotNull { it.toIntOrNull() }
     return if (years.isNotEmpty()) {
         val minY = years.min(); val maxY = years.max()
@@ -2411,7 +2391,7 @@ private fun periodNoteOf(vm: DashboardViewModel): String {
 /** 科別各院區明細卡片(點擊科別長條顯示)。 */
 @Composable
 private fun DeptBranchCard(
-    vm: DashboardViewModel,
+    vm: DesktopViewModel,
     dept: String,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit
@@ -2567,7 +2547,7 @@ private fun YoyMetricLine(name: String, cur: Double, prior: Double?, fmt: (Doubl
 /** 科別醫師服務量明細(點擊醫師服務量分頁科別長條顯示)。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhysDeptSheet(vm: DashboardViewModel, dept: String, onDismiss: () -> Unit) {
+fun PhysDeptSheet(vm: DesktopViewModel, dept: String, onDismiss: () -> Unit) {
     val filters = vm.filters.value
     val anchor by produceState<Pair<Int, Int>?>(null, dept) {
         value = withContext(Dispatchers.IO) { vm.repo.anchorYm(filters) }
@@ -2658,7 +2638,7 @@ fun PhysDeptSheet(vm: DashboardViewModel, dept: String, onDismiss: () -> Unit) {
 /** 各院區收入明細(點擊收入月份長條顯示)。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IncomeDetailSheet(vm: DashboardViewModel, ym: Int, onDismiss: () -> Unit) {
+fun IncomeDetailSheet(vm: DesktopViewModel, ym: Int, onDismiss: () -> Unit) {
     val filters = vm.filters.value
     val stats by produceState<List<DashboardRepo.BranchIncomeStat>>(emptyList(), ym) {
         value = withContext(Dispatchers.IO) { vm.repo.physBranchIncome(filters, ym) }
@@ -2709,12 +2689,6 @@ fun IncomeDetailSheet(vm: DashboardViewModel, ym: Int, onDismiss: () -> Unit) {
     }
 }
 
-/** 從 Context 找回 Activity(用於切換螢幕方向)。 */
-fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -3384,7 +3358,7 @@ fun PieChart(data: PieData, height: Dp = 160.dp) {
 
 /** 圓餅放大檢視：圓餅圖置右、左方呈現各區塊近三個月趨勢與去年同期比較。 */
 @Composable
-private fun PieZoomLayout(vm: DashboardViewModel, data: PieData) {
+private fun PieZoomLayout(vm: DesktopViewModel, data: PieData) {
     val detail by produceState<List<DashboardRepo.IncomeSliceStat>>(emptyList()) {
         value = withContext(Dispatchers.IO) { vm.repo.physIncomeSliceDetail(vm.filters.value) }
     }

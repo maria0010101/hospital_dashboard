@@ -23,5 +23,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "hospital_dashboard"
+include(":core")
 include(":app")
+include(":desktop")
  
