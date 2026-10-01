@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android & Windows 桌面雙平台
 
-[![Version](https://img.shields.io/badge/version-0.8.1-blue.svg)](https://github.com/maria0010101/hospital_dashboard/tree/0.8.1)
+[![Version](https://img.shields.io/badge/version-0.8.1-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.1)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20Desktop-green.svg)](https://github.com/maria0010101/hospital_dashboard)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.2.10-purple.svg)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose-Multiplatform%20Desktop-brightgreen.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
@@ -11,9 +11,8 @@
 
 ## 📥 最新安裝檔下載與線上編譯
 
-- **最新原始碼備份**：[`0.8.1`](https://github.com/maria0010101/hospital_dashboard/tree/0.8.1)（本版不附營運資料或混淆對照表）。
-- **Android 安裝檔 (既有 v0.8.0 APK)**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
-- **Windows 桌面版 (MSI / EXE / 免安裝 ZIP)**：透過 [GitHub Actions 線上編譯工作流程](https://github.com/maria0010101/hospital_dashboard/actions) 自動打包產出發布。
+- **Android 安裝檔 (APK)**：[下載 0.8.1 APK](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.1/hospital_dashboard_v0.8.1.apk)。
+- **Windows 桌面版 (MSI / EXE / 免安裝 ZIP)**：[0.8.1 Release](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.1) 提供由 [GitHub Actions](https://github.com/maria0010101/hospital_dashboard/actions/runs/36839330831) 線上編譯的安裝包。
 - **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases)
 
 ---
@@ -126,11 +125,11 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **0.8.1（最新原始碼備份）**
+### **0.8.1（Latest）**
 - 桌面與平板圖表依寬度自適應排列，整併操作入口並修正深色模式、字級與圖表框線。
 - 全院營運指標改為逐項查看各院區當月、去年同期及近三個月數據；病床熱力圖改用滑動開關。
 - AI 分析加入 Claude、DeepSeek 選項，完善線上服務連線設定、焦點資料混淆及貼回報告還原。
-- 本版僅備份程式碼；業務活頁簿、SQLite 資料庫、AI 金鑰與混淆對照表均不納入版本控制。
+- 業務活頁簿、SQLite 資料庫、AI 金鑰與混淆對照表均不納入版本控制或 Release 資產。
 
 ### **v0.8.0**
 - **新增「門診篩檢疫苗人次」工作表資料匯入與扣除支援**：
