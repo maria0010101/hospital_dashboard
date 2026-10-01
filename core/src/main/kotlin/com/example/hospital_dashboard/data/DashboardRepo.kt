@@ -246,9 +246,55 @@ class DashboardRepo(private val db: HospitalDb) {
         }
     }
 
+    /** KPI 卡片專屬院區明細。口徑與 kpiForMonth 相同，月份以錨點月往前推兩個月。 */
+    data class BranchKpiDetail(
+        val branch: String,
+        val value: Double,
+        val prior: Double?,
+        val trend3: List<Double?>
+    )
+
+    fun branchKpiDetails(year: String, month: String, metric: String): List<BranchKpiDetail> {
+        val y = year.toIntOrNull() ?: return emptyList()
+        val m = month.toIntOrNull() ?: return emptyList()
+        // 僅使用白名單中的固定 SQL，指標名稱不會成為 SQL 輸入。
+        val (table, expression) = when (metric) {
+            "門診人次" -> "outpatient_service" to "SUM(CAST(opd_visit_count AS REAL))"
+            "急診人次" -> "outpatient_service" to "SUM(CAST(er_visit AS REAL))"
+            "總診次" -> "outpatient_service" to "SUM(CAST(total_clinic_sessions AS REAL))"
+            "住院人次" -> "inpatient_service" to "SUM(CAST(admission_count AS REAL))"
+            "住院人日" -> "inpatient_service" to "SUM(CAST(admission_days AS REAL))"
+            "佔床率", "平均佔床率" -> "bed_type_service" to avgCast("actual_occupancy_rate")
+            "院外門診" -> "offsite_clinic_service" to "SUM(CAST(total AS REAL))"
+            "血液透析", "洗腎人次" -> "accounting_report" to "SUM(CAST(dialysis_count AS REAL))"
+            "健檢人次" -> "accounting_report" to
+                "COALESCE(SUM(CAST(opd_checkup_count AS REAL)),0)+COALESCE(SUM(CAST(admission_checkup_count AS REAL)),0)"
+            else -> return emptyList()
+        }
+        val isOccupancy = table == "bed_type_service"
+        val months = listOf(monthBack(y, m, 2), monthBack(y, m, 1), y to m, (y - 1) to m)
+        val (condition, params) = ymInCond(months)
+        val extra = if (isOccupancy)
+            " AND $BED_OCC_EXCLUDE_MAJOR_SQL AND actual_occupancy_rate IS NOT NULL AND CAST(actual_occupancy_rate AS REAL) > 0"
+        else ""
+        val rows = db.query(
+            "SELECT branch_name, year, month, $expression FROM $table WHERE $condition$extra " +
+                "GROUP BY branch_name, year, month", params
+        )
+        val grouped = rows.groupBy { it[0]?.toString().orEmpty() }
+        return grouped.mapNotNull { (branch, values) ->
+            if (branch.isBlank()) return@mapNotNull null
+            fun at(key: Pair<Int, Int>): Double? = values.firstOrNull {
+                it[1]?.toString()?.toIntOrNull() == key.first && it[2]?.toString()?.toIntOrNull() == key.second
+            }?.let { num(it[3])?.times(if (isOccupancy) 100.0 else 1.0) }
+            val current = at(y to m) ?: return@mapNotNull null
+            BranchKpiDetail(branch, current, at((y - 1) to m), months.take(3).map(::at))
+        }.sortedByDescending { it.value }
+    }
+
     private fun monthBranchMap(year: String, month: String): Map<String, BranchMonthStat> {
         val opdRows = db.query(
-            "SELECT branch, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)) " +
+            "SELECT branch_name, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)) " +
                 "FROM outpatient_service WHERE year=? AND month=? GROUP BY branch_name",
             arrayOf(year, month)
         )
@@ -3617,12 +3663,15 @@ class DashboardRepo(private val db: HospitalDb) {
             appendLine("【基準月份】$anchorLabel")
             appendLine("【營運概況】")
             kpis.forEach { (name, cur, prior) ->
+                val isRate = name.contains("佔床率")
+                val fmt = if (isRate) Fmt::percent else Fmt::int
                 val yoy = if (prior != null && prior != 0.0) {
-                    val d = (cur - prior) / prior * 100.0
-                    if (d >= 0) "（去年同期 ${Fmt.int(prior)}，▲+${String.format("%.1f%%", d)}）"
-                    else "（去年同期 ${Fmt.int(prior)}，▼${String.format("%.1f%%", d)}）"
+                    val d = if (isRate) cur - prior else (cur - prior) / prior * 100.0
+                    val unit = if (isRate) "pp" else "%"
+                    if (d >= 0) "（去年同期 ${fmt(prior)}，▲+${String.format("%.1f", d)}$unit）"
+                    else "（去年同期 ${fmt(prior)}，▼${String.format("%.1f", d)}$unit）"
                 } else ""
-                appendLine("- $name：${Fmt.int(cur)}$yoy")
+                appendLine("- $name：${fmt(cur)}$yoy")
             }
             appendLine("【科別門診人次 Top8】")
             deptOpd.forEach { (d, v) -> appendLine("- $d：${Fmt.int(v)} 人次") }
@@ -3654,8 +3703,9 @@ class DashboardRepo(private val db: HospitalDb) {
             branch, ys, ms)
         // 平均實際佔床率
         val occ = row(
-            "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
-                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL AND year=? AND month=?",
+            "SELECT ${avgCast("actual_occupancy_rate")} " +
+                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL " +
+                "AND actual_occupancy_rate IS NOT NULL AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?",
             branch, ys, ms)
         // 收入結構
         val inc = row(
@@ -3673,8 +3723,9 @@ class DashboardRepo(private val db: HospitalDb) {
                 "FROM inpatient_service WHERE branch_name=? AND year=? AND month=?",
             branch, py, ms)
         val occP = row(
-            "SELECT AVG(CASE WHEN ${numGuard("actual_occupancy_rate")} THEN CAST(actual_occupancy_rate AS REAL) END) " +
-                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL AND year=? AND month=?",
+            "SELECT ${avgCast("actual_occupancy_rate")} " +
+                "FROM bed_type_service WHERE branch_name=? AND $BED_OCC_EXCLUDE_MAJOR_SQL " +
+                "AND actual_occupancy_rate IS NOT NULL AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?",
             branch, py, ms)
 
         val kpis = mutableListOf<Triple<String, Double, Double?>>()
@@ -3719,6 +3770,60 @@ class DashboardRepo(private val db: HospitalDb) {
             anchorLabel = "$y 年${m.toString().padStart(2, '0')}月",
             kpis = kpis, deptOpd = deptOpd, income = income, doctors = doctors
         )
+    }
+
+    /** 依分析焦點補充資料庫實際可得的近三月、分類與收入資料；僅於本機產生文字。 */
+    fun branchAnalysisText(branch: String, focus: String): String? {
+        val summary = branchAnalysisSummary(branch) ?: return null
+        val (y, m) = anchorYm(Filters(years = emptyList())) ?: return summary.toText()
+        val months = listOf(monthBack(y, m, 2), monthBack(y, m, 1), y to m)
+        val (condition, params) = ymInCond(months)
+        fun query(sql: String, latestOnly: Boolean = false): List<List<Any?>> = db.query(
+            sql,
+            if (latestOnly) arrayOf(branch, y.toString(), m.toString()) else arrayOf(*params, branch)
+        )
+        val all = focus.contains("綜合") || focus.contains("摘要") || focus.contains("趨勢") || focus.contains("異常")
+        return buildString {
+            append(summary.toText())
+            if (all || focus.contains("門急診")) {
+                appendLine("【近三個月門急診與初複診】")
+                query("SELECT year, month, SUM(CAST(opd_visit_count AS REAL)), SUM(CAST(er_visit AS REAL)), " +
+                    "SUM(CAST(first_visit_count AS REAL)), SUM(CAST(return_visit_count AS REAL)), " +
+                    "SUM(CAST(total_clinic_sessions AS REAL)) FROM outpatient_service " +
+                    "WHERE $condition AND branch_name=? GROUP BY year, month ORDER BY CAST(year AS INTEGER), CAST(month AS INTEGER)")
+                    .forEach { r -> appendLine("- ${r[0]}年${r[1]}月：門診 ${Fmt.int(num(r[2]) ?: 0.0)}、急診 ${Fmt.int(num(r[3]) ?: 0.0)}、初診 ${Fmt.int(num(r[4]) ?: 0.0)}、複診 ${Fmt.int(num(r[5]) ?: 0.0)}、診次 ${Fmt.int(num(r[6]) ?: 0.0)}") }
+            }
+            if (all || focus.contains("住院")) {
+                appendLine("【近三個月住院與出院】")
+                query("SELECT year, month, SUM(CAST(admission_count AS REAL)), SUM(CAST(admission_days AS REAL)), " +
+                    "SUM(CAST(discharge_count AS REAL)), SUM(CAST(discharge_days AS REAL)) FROM inpatient_service " +
+                    "WHERE $condition AND branch_name=? GROUP BY year, month ORDER BY CAST(year AS INTEGER), CAST(month AS INTEGER)")
+                    .forEach { r -> appendLine("- ${r[0]}年${r[1]}月：住院人次 ${Fmt.int(num(r[2]) ?: 0.0)}、住院人日 ${Fmt.int(num(r[3]) ?: 0.0)}、出院人次 ${Fmt.int(num(r[4]) ?: 0.0)}、出院人日 ${Fmt.int(num(r[5]) ?: 0.0)}") }
+                appendLine("【住院人日科別 Top8】")
+                query("SELECT dept, SUM(CAST(admission_days AS REAL)) FROM inpatient_service " +
+                    "WHERE branch_name=? AND year=? AND month=? AND dept IS NOT NULL AND dept != '' " +
+                    "GROUP BY dept ORDER BY 2 DESC LIMIT 8", latestOnly = true)
+                    .forEach { r -> appendLine("- ${r[0]}：${Fmt.int(num(r[1]) ?: 0.0)} 人日") }
+            }
+            if (all || focus.contains("病床")) {
+                appendLine("【當月病床大類別：加權佔床率＝住院人日／實際床日】")
+                query("SELECT major_category, SUM(CAST(admission_days AS REAL)), SUM(CAST(actual_bed_days AS REAL)), " +
+                    "SUM(CAST(actual_open_beds AS REAL)), ${bedActualOccSql()} FROM bed_type_service " +
+                    "WHERE branch_name=? AND year=? AND month=? AND $BED_OCC_EXCLUDE_MAJOR_SQL " +
+                    "GROUP BY major_category ORDER BY major_category", latestOnly = true)
+                    .forEach { r -> appendLine("- ${r[0] ?: "未分類"}：住院人日 ${Fmt.int(num(r[1]) ?: 0.0)}、實際床日 ${Fmt.int(num(r[2]) ?: 0.0)}、實開床 ${Fmt.int(num(r[3]) ?: 0.0)}、佔床率 ${num(r[4])?.let { Fmt.percent(it * 100) } ?: "—"}") }
+            }
+            if (all || focus.contains("營運") || focus.contains("營收")) {
+                appendLine("【近三個月其他服務與收入】")
+                query("SELECT year, month, SUM(CAST(surgery_opd_count AS REAL)), " +
+                    "SUM(CAST(surgery_admission_count AS REAL)), SUM(CAST(delivery_count AS REAL)), " +
+                    "SUM(CAST(total_income_opd AS REAL)), SUM(CAST(total_income_admission AS REAL)), " +
+                    "SUM(CAST(self_pay_income_opd AS REAL)), SUM(CAST(self_pay_income_admission AS REAL)) " +
+                    "FROM ops_management_indicators WHERE $condition AND branch_name=? " +
+                    "GROUP BY year, month ORDER BY CAST(year AS INTEGER), CAST(month AS INTEGER)")
+                    .forEach { r -> appendLine("- ${r[0]}年${r[1]}月：門診手術 ${Fmt.int(num(r[2]) ?: 0.0)}、住院手術 ${Fmt.int(num(r[3]) ?: 0.0)}、生產 ${Fmt.int(num(r[4]) ?: 0.0)}、門診收入 ${Fmt.money(num(r[5]) ?: 0.0)}、住院收入 ${Fmt.money(num(r[6]) ?: 0.0)}、門診自費 ${Fmt.money(num(r[7]) ?: 0.0)}、住院自費 ${Fmt.money(num(r[8]) ?: 0.0)}") }
+            }
+        }
     }
 
     /** 供貼文混淆用的實體名稱字典（院區/科別/醫師/門診部）。 */

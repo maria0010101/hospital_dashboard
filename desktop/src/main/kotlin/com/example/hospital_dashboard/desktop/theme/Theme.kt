@@ -7,10 +7,18 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+
+@Composable
+fun positiveTextColor(): Color = if (MaterialTheme.colorScheme.surface.luminance() < 0.4f)
+    Color(0xFF84D9AA) else Color(0xFF1E8449)
+
+@Composable
+fun negativeTextColor(): Color = MaterialTheme.colorScheme.error
 
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
@@ -69,9 +77,19 @@ val DesktopTypography = Typography(
 @Composable
 fun HospitalDashboardDesktopTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    paletteIndex: Int = 0,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val base = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = when (paletteIndex) {
+        1 -> base.copy(primary = Color(if (darkTheme) 0xFF90CAF9 else 0xFF145CA8),
+            secondary = Color(if (darkTheme) 0xFFB0C9E8 else 0xFF426286),
+            tertiary = Color(if (darkTheme) 0xFF8BD1E6 else 0xFF006B80))
+        2 -> base.copy(primary = Color(if (darkTheme) 0xFF81D8C5 else 0xFF006B5C),
+            secondary = Color(if (darkTheme) 0xFF9CCFC1 else 0xFF42685E),
+            tertiary = Color(if (darkTheme) 0xFFFFCB91 else 0xFF875500))
+        else -> base
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,

@@ -1,5 +1,8 @@
 package com.example.hospital_dashboard.desktop.ui
 
+import com.example.hospital_dashboard.desktop.theme.positiveTextColor
+import com.example.hospital_dashboard.desktop.theme.negativeTextColor
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -72,6 +75,8 @@ fun AnalysisTab(vm: DesktopViewModel) {
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showRealView by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
+    var pastedReport by remember { mutableStateOf("") }
+    var providerMenu by remember { mutableStateOf(false) }
 
     val anonymizer = vm.anonymizer
 
@@ -111,26 +116,41 @@ fun AnalysisTab(vm: DesktopViewModel) {
                     HorizontalDivider()
                     Spacer(Modifier.height(10.dp))
 
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box {
+                        OutlinedButton(onClick = { providerMenu = true }) {
+                            Text("AI 引擎：${config.providerType.label} ▾")
+                        }
+                        DropdownMenu(expanded = providerMenu, onDismissRequest = { providerMenu = false }) {
+                            AiProviderType.entries.forEach { provider ->
+                                DropdownMenuItem(text = { Text(provider.label) }, onClick = {
+                                    config = config.copy(providerType = provider, model = provider.defaultModel)
+                                    providerMenu = false
+                                })
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    if (config.providerType.allowsCustomBaseUrl) {
                         OutlinedTextField(
                             value = config.baseUrl,
                             onValueChange = { config = config.copy(baseUrl = it) },
-                            label = { Text("Base URL（例：http://127.0.0.1:11434/v1）") },
-                            modifier = Modifier.weight(1f)
+                            label = { Text("Base URL（本地或自訂 AI）") },
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        OutlinedTextField(
-                            value = config.model,
-                            onValueChange = { config = config.copy(model = it) },
-                            label = { Text("Model Name（例：llama3 / qwen2.5）") },
-                            modifier = Modifier.weight(1f)
-                        )
+                        Spacer(Modifier.height(8.dp))
                     }
+                    OutlinedTextField(
+                        value = config.model,
+                        onValueChange = { config = config.copy(model = it) },
+                        label = { Text("模型名稱") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = config.apiKey,
                         onValueChange = { config = config.copy(apiKey = it) },
-                        label = { Text("API Key（本機 Ollama 可留空）") },
+                        label = { Text(if (config.providerType.allowsCustomBaseUrl) "API Key（本地服務可留空）" else "API Key（線上服務必填）") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -163,7 +183,7 @@ fun AnalysisTab(vm: DesktopViewModel) {
                                     (r.latencyMs?.let { "（延遲 ${it} ms）" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (r.ok) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                color = if (r.ok) positiveTextColor() else negativeTextColor()
                             )
                         }
                     }
@@ -190,7 +210,7 @@ fun AnalysisTab(vm: DesktopViewModel) {
         // ── 步驟 1：輸入/載入資料 ──
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("📥 步驟 1：選取分析焦點與營運資料", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text("📥 選取分析焦點與營運資料", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     DIMENSIONS.forEach { d ->
@@ -205,7 +225,8 @@ fun AnalysisTab(vm: DesktopViewModel) {
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp)
                 )
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { showBranchSheet = true }) {
                         Text("📋 產生院區資料")
                     }
@@ -267,11 +288,14 @@ fun AnalysisTab(vm: DesktopViewModel) {
         if (showPreview && originalPreview != null) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("🔍 步驟 2：脫敏對照檢驗（左：原始資料 ｜ 右：上傳混淆資料）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text("🔍 脫敏對照檢驗（左：原始資料 ｜ 右：上傳混淆資料）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val paneWidth = if (maxWidth < 560.dp) maxWidth else (maxWidth - 12.dp) / 2
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(
-                            Modifier.weight(1f).heightIn(max = 180.dp)
+                            Modifier.width(paneWidth).heightIn(max = 180.dp)
                                 .verticalScroll(rememberScrollState())
                                 .clip(RoundedCornerShape(8.dp))
                                 .padding(8.dp)
@@ -281,14 +305,15 @@ fun AnalysisTab(vm: DesktopViewModel) {
                             Text(originalPreview!!, style = MaterialTheme.typography.bodySmall)
                         }
                         Column(
-                            Modifier.weight(1f).heightIn(max = 180.dp)
+                            Modifier.width(paneWidth).heightIn(max = 180.dp)
                                 .verticalScroll(rememberScrollState())
                                 .clip(RoundedCornerShape(8.dp))
                                 .padding(8.dp)
                         ) {
-                            Text("混淆代碼（送交 AI 模型）", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFF1E8449))
+                            Text("混淆代碼（送交 AI 模型）", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = positiveTextColor())
                             Spacer(Modifier.height(4.dp))
                             Text(obfuscatedText, style = MaterialTheme.typography.bodySmall)
+                        }
                         }
                     }
                 }
@@ -368,6 +393,26 @@ fun AnalysisTab(vm: DesktopViewModel) {
                 }
             }
         }
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🔄 外部分析報告混淆還原", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold)
+                Text("將其他工具產生、仍使用混淆代碼的報告貼在此處；還原只在本機執行。",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = pastedReport, onValueChange = { pastedReport = it },
+                    label = { Text("貼上混淆後報告") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+                if (pastedReport.isNotBlank()) {
+                    val restored = anonymizer.rehydrate(pastedReport)
+                    MarkdownView(restored, Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = {
+                        val selection = StringSelection(restored)
+                        Toolkit.getDefaultToolkit().systemClipboard.setContents(selection, selection)
+                        statusMsg = "已複製還原報告"
+                    }) { Text("複製還原報告") }
+                }
+            }
+        }
     }
 
     // ── 產生院區資料面板 ──
@@ -386,9 +431,13 @@ fun AnalysisTab(vm: DesktopViewModel) {
                             .clickable {
                                 showBranchSheet = false
                                 scope.launch {
-                                    val summary = withContext(Dispatchers.IO) { vm.repo.branchAnalysisSummary(br) }
-                                    if (summary != null) {
-                                        val original = summary.toText()
+                                    val dict = withContext(Dispatchers.IO) { vm.repo.anonymizerDictionary() }
+                                    dict.branches.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Branch) }
+                                    dict.depts.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Dept) }
+                                    dict.doctors.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Doctor) }
+                                    dict.clinics.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Clinic) }
+                                    val original = withContext(Dispatchers.IO) { vm.repo.branchAnalysisText(br, dimension) }
+                                    if (original != null) {
                                         val obf = anonymizer.obfuscate(original)
                                         originalPreview = original
                                         obfuscatedText = obf

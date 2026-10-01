@@ -2,13 +2,17 @@ package com.example.hospital_dashboard.data
 
 import org.json.JSONObject
 
-/** AI 引擎類型（全部走 OpenAI-Compatible Chat Completions 協定）。 */
-enum class AiProviderType(val label: String) {
-    Ollama("本地 Ollama"),
-    Vllm("自建 vLLM"),
-    Gemini("Google Gemini"),
-    OpenAI("OpenAI"),
-    Custom("Custom Gateway");
+/** 各服務的 OpenAI-compatible Chat Completions 入口；自架服務才允許自訂網址。 */
+enum class AiProviderType(val label: String, val baseUrl: String?, val defaultModel: String) {
+    Ollama("本地 Ollama", null, "llama3"),
+    Vllm("自建 vLLM", null, ""),
+    Gemini("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.8-flash"),
+    OpenAI("OpenAI", "https://api.openai.com/v1", "gpt-4.1-mini"),
+    Claude("Claude", "https://api.anthropic.com/v1", "claude-sonnet-5-5"),
+    DeepSeek("DeepSeek", "https://api.deepseek.com", "deepseek-flash"),
+    Custom("自訂 AI", null, "");
+
+    val allowsCustomBaseUrl: Boolean get() = baseUrl == null
 
     companion object {
         fun from(name: String?): AiProviderType =
@@ -25,7 +29,7 @@ data class AiProviderConfig(
 ) {
     /** 正規化為完整 endpoint（/chat/completions）。 */
     fun chatCompletionsUrl(): String {
-        val b = baseUrl.trim().trimEnd('/')
+        val b = (providerType.baseUrl ?: baseUrl).trim().trimEnd('/')
         return if (b.endsWith("/chat/completions")) b else "$b/chat/completions"
     }
 

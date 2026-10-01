@@ -108,3 +108,15 @@
    * `DashboardRepo` 中各方法回傳特定 UI 圖表專用的資料結構（如 `LineChartData`、`HBarData`、`TableData`），而非純粹的標準報表結果（ReportResult / StandardDataset），導致同一統計邏輯無法直接轉為 CSV/Excel 或 API。
 5. **YoY 計算無通用機制**：
    * 各方法自行執行一次主查詢、一次 `yearOffset = -1` 查詢，再於記憶體手動對齊並組裝虛線。
+
+---
+
+## 2026-10-01 現況補充：跨平台 UI、AI 與 KPI 明細
+
+此補充以目前三模組程式碼為準；前述 2026-09-11 單模組清單是歷史基準，不能視為目前模組路徑。
+
+- **共同資料層**：`core/src/main/kotlin/com/example/hospital_dashboard/data/DashboardRepo.kt` 提供 Android/桌面相同的 KPI (`kpiForMonth`)、按單一指標展開院區近三個月與去年同期 (`branchKpiDetails`)、以及按分析焦點擷取本機營運文字 (`branchAnalysisText`)。所有值直接由既有工作表映射到的 SQLite 表查詢，不在 UI 重新聚合。KPI 佔床率延續 `kpiForMonth` 原有排除大類與有效數值後之 AVG 口徑；病床分類圖表維持既有「住院人日/實際床日」加權口徑，兩者不可混稱。
+- **AI 協定與隱私**：`core/.../AiConfig.kt` 為線上服務選擇官方固定 URL，本地/自架才接受自訂 Base URL；`AiClient.kt` 負責 SSE。`Anonymizer.kt` 的雙向對照表僅存本機。兩平台的 `ui/AnalysisTab.kt` 都可將外部混淆報告貼回本機還原。
+- **Android UI**：`app/src/main/java/com/example/hospital_dashboard/ui/{DashboardScreen,DashboardTabs,AnalysisTab}.kt`；`ui/theme/Theme.kt` 依深淺色與三組配色建立 Material 3 色板；`MainActivity.kt` 注入可調字級。
+- **桌面 UI**：`desktop/src/main/kotlin/com/example/hospital_dashboard/desktop/{Main.kt,ui/DashboardScreen.kt,ui/DashboardTabs.kt,ui/AnalysisTab.kt}`；`Main.kt` 依視窗寬度與字級提供 CompositionLocal，圖表採自適應最低欄寬，不再固定 3 欄。
+- **驗證**：`core/src/test/kotlin/com/example/hospital_dashboard/data/{JdbcHospitalDbTest,AiFlowTest}.kt`；指定本機 Excel 的條件測試僅檢查筆數、KPI 與院區回推一致性，不將真實資料加入版控、fixture 或文件。

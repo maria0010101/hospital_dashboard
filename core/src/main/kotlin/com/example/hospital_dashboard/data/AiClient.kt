@@ -39,8 +39,9 @@ object AiClient {
             val started = System.currentTimeMillis()
             val code = conn.responseCode
             ms = System.currentTimeMillis() - started
-            val respText = conn.inputStream?.bufferedReader()?.use { it.readText() }
-                ?: conn.errorStream?.bufferedReader()?.use { it.readText() }
+            val respText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() }
+            conn.disconnect()
             if (code in 200..299) {
                 AiTestResult(true, "連線成功（HTTP $code）", ms)
             } else {
@@ -65,8 +66,9 @@ object AiClient {
                 .put("messages", arr)
             val conn = openConn(config, body)
             val code = conn.responseCode
-            val respText = conn.inputStream?.bufferedReader()?.use { it.readText() }
-                ?: conn.errorStream?.bufferedReader()?.use { it.readText() }
+            val respText = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() }
+            conn.disconnect()
             if (code !in 200..299) {
                 throw IllegalStateException("HTTP $code：${respText?.take(160)}")
             }
@@ -88,7 +90,6 @@ object AiClient {
         val body = JSONObject()
             .put("model", config.model)
             .put("stream", true)
-            .put("temperature", 0.3)
             .put("max_tokens", 2048)
             .put("messages", arr)
 

@@ -33,7 +33,8 @@ class MainActivity : ComponentActivity() {
             val windowSizeClass = calculateWindowSizeClass(this)
             val vm: DashboardViewModel = viewModel()
             val isDarkMode by vm.isDarkMode.collectAsState()
-            Hospital_dashboardTheme(darkTheme = isDarkMode) {
+            val paletteIndex by vm.paletteIndex.collectAsState()
+            Hospital_dashboardTheme(darkTheme = isDarkMode, paletteIndex = paletteIndex) {
                 val fontScaleLevel by vm.fontScaleLevel.collectAsState()
                 val fontMultiplier = DashboardViewModel.FONT_SCALE_MULTIPLIERS.getOrElse(fontScaleLevel) { 1.0f }
                 val baseDensity = LocalDensity.current

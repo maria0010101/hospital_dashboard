@@ -53,6 +53,7 @@ class DesktopViewModel(val appDir: File = getDesktopAppDataDir()) {
 
     val fontScaleLevel = MutableStateFlow(0)
     val isDarkMode = MutableStateFlow(false)
+    val paletteIndex = MutableStateFlow(0)
 
     private val _zoomChart = MutableStateFlow<com.example.hospital_dashboard.desktop.ui.charts.ChartContent?>(null)
     val zoomChart: StateFlow<com.example.hospital_dashboard.desktop.ui.charts.ChartContent?> = _zoomChart
@@ -115,6 +116,7 @@ class DesktopViewModel(val appDir: File = getDesktopAppDataDir()) {
                 val json = JSONObject(settingsFile.readText())
                 isDarkMode.value = json.optBoolean("dark_mode", false)
                 fontScaleLevel.value = json.optInt("font_scale_level", 0).coerceIn(0, 4)
+                paletteIndex.value = json.optInt("palette_index", 0).coerceIn(0, 2)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -126,6 +128,7 @@ class DesktopViewModel(val appDir: File = getDesktopAppDataDir()) {
             val json = JSONObject()
             json.put("dark_mode", isDarkMode.value)
             json.put("font_scale_level", fontScaleLevel.value)
+            json.put("palette_index", paletteIndex.value)
             settingsFile.writeText(json.toString(2))
         } catch (e: Exception) {
             e.printStackTrace()
@@ -134,6 +137,11 @@ class DesktopViewModel(val appDir: File = getDesktopAppDataDir()) {
 
     fun setDarkMode(enabled: Boolean) {
         isDarkMode.value = enabled
+        saveSettings()
+    }
+
+    fun setPaletteIndex(index: Int) {
+        paletteIndex.value = index.coerceIn(0, 2)
         saveSettings()
     }
 

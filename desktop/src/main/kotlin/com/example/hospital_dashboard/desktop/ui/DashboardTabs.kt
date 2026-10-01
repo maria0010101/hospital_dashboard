@@ -101,12 +101,13 @@ private fun TabColumn(content: @Composable () -> Unit) {
 
 @Composable
 private fun TabGrid(
+    @Suppress("UNUSED_PARAMETER")
     columns: Int,
     modifier: Modifier = Modifier,
     content: LazyGridScope.() -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
+        columns = GridCells.Adaptive(minSize = 300.dp),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -726,17 +727,9 @@ fun BedTab(vm: DesktopViewModel, filters: DashboardRepo.Filters) {
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = !excludeOther,
-                            onClick = { excludeOther = false },
-                            label = { Text("全部顯示") }
-                        )
-                        FilterChip(
-                            selected = excludeOther,
-                            onClick = { excludeOther = true },
-                            label = { Text("排除其他") }
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (excludeOther) "排除其他" else "全部顯示", style = MaterialTheme.typography.labelMedium)
+                        Switch(checked = excludeOther, onCheckedChange = { excludeOther = it })
                     }
                 }
             }
@@ -833,9 +826,9 @@ fun BedTab(vm: DesktopViewModel, filters: DashboardRepo.Filters) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("病床類別熱力圖", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = !excludeOther, onClick = { excludeOther = false }, label = { Text("全部顯示") })
-                            FilterChip(selected = excludeOther, onClick = { excludeOther = true }, label = { Text("排除其他") })
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(if (excludeOther) "排除其他" else "全部顯示", style = MaterialTheme.typography.labelMedium)
+                            Switch(checked = excludeOther, onCheckedChange = { excludeOther = it })
                         }
                     }
                 }

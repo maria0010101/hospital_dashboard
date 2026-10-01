@@ -1,6 +1,6 @@
 # 醫院營運儀表板 (Hospital Operations Dashboard) — Android & Windows 桌面雙平台
 
-[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.0)
+[![Version](https://img.shields.io/badge/version-0.8.1-blue.svg)](https://github.com/maria0010101/hospital_dashboard/tree/0.8.1)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20Desktop-green.svg)](https://github.com/maria0010101/hospital_dashboard)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.2.10-purple.svg)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose-Multiplatform%20Desktop-brightgreen.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
@@ -11,7 +11,8 @@
 
 ## 📥 最新安裝檔下載與線上編譯
 
-- **Android 安裝檔 (APK)**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
+- **最新原始碼備份**：[`0.8.1`](https://github.com/maria0010101/hospital_dashboard/tree/0.8.1)（本版不附營運資料或混淆對照表）。
+- **Android 安裝檔 (既有 v0.8.0 APK)**：[`release/hospital_dashboard_v0.8.0.apk`](release/hospital_dashboard_v0.8.0.apk)
 - **Windows 桌面版 (MSI / EXE / 免安裝 ZIP)**：透過 [GitHub Actions 線上編譯工作流程](https://github.com/maria0010101/hospital_dashboard/actions) 自動打包產出發布。
 - **GitHub Release 官方發布**：[Releases · maria0010101/hospital_dashboard](https://github.com/maria0010101/hospital_dashboard/releases)
 
@@ -125,7 +126,13 @@ flowchart LR
 
 ## 📝 版本演進歷程
 
-### **v0.8.0 (Latest)**
+### **0.8.1（最新原始碼備份）**
+- 桌面與平板圖表依寬度自適應排列，整併操作入口並修正深色模式、字級與圖表框線。
+- 全院營運指標改為逐項查看各院區當月、去年同期及近三個月數據；病床熱力圖改用滑動開關。
+- AI 分析加入 Claude、DeepSeek 選項，完善線上服務連線設定、焦點資料混淆及貼回報告還原。
+- 本版僅備份程式碼；業務活頁簿、SQLite 資料庫、AI 金鑰與混淆對照表均不納入版本控制。
+
+### **v0.8.0**
 - **新增「門診篩檢疫苗人次」工作表資料匯入與扣除支援**：
   - 資料庫新增 `vaccine_service` 資料表，支援欄位：`資料年月`、`院區`、`科別名稱`、`院區初複診`、`門診篩檢施打疫苗人次`、`急診篩檢施打疫苗人次`、`流感疫苗人次`、`年度`、`月份`，並於匯入時自動建立索引加速查詢。
 - **門急診分頁「排除疫苗施打人次」圓形滑動切換開關**：
@@ -304,7 +311,7 @@ flowchart LR
 
 # 編譯 Release APK（已內建 debug keystore 簽章，開箱即裝）
 ./gradlew assembleRelease
-# 產出檔案位置：release/hospital_dashboard_v0.8.0.apk
+# 本機建置產物：app/build/outputs/apk/release/app-release.apk（未納入 0.8.1 原始碼備份）
 ```
 
 ---

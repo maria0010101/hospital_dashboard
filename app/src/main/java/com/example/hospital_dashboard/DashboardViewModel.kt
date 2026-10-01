@@ -70,6 +70,12 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 深色模式狀態持久化 */
     val isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
+    val paletteIndex = MutableStateFlow(prefs.getInt("palette_index", 0).coerceIn(0, 2))
+
+    fun setPaletteIndex(index: Int) {
+        paletteIndex.value = index.coerceIn(0, 2)
+        prefs.edit().putInt("palette_index", paletteIndex.value).apply()
+    }
 
     fun setDarkMode(enabled: Boolean) {
         isDarkMode.value = enabled

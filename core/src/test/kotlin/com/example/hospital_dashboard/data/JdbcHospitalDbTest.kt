@@ -42,9 +42,9 @@ class JdbcHospitalDbTest {
 
     @Test
     fun testRealExcelImportIfPresent() {
-        val testXlsx = File("/home/hpd/下載/業務資料彙整-1150924.xlsx")
-        if (!testXlsx.exists()) {
-            println("Skipping real Excel test: file not found")
+        val testXlsx = System.getenv("HOSPITAL_TEST_XLSX")?.takeIf { it.isNotBlank() }?.let(::File)
+        if (testXlsx == null || !testXlsx.isFile) {
+            println("Skipping real Excel test: set HOSPITAL_TEST_XLSX to a local workbook")
             return
         }
         val tempDb = File.createTempFile("test_import", ".db")
@@ -74,6 +74,29 @@ class JdbcHospitalDbTest {
             println("KPI opd: ${kpi.opd}")
             assertNotNull(kpi)
             assertTrue((kpi.opd ?: 0.0) > 0)
+
+            // KPI 明細必須可回推原 KPI 總值，避免點擊後院區數字與上方卡片不一致。
+            val latest = repo.latestMonth()!!
+            val latestKpi = repo.kpiForMonth(latest.first, latest.second)
+            val additive = mapOf(
+                "門診人次" to latestKpi.opd, "急診人次" to latestKpi.er,
+                "總診次" to latestKpi.sessions, "住院人次" to latestKpi.ipdAdm,
+                "住院人日" to latestKpi.ipdDays, "院外門診" to latestKpi.offsite,
+                "血液透析" to latestKpi.dialysis, "健檢人次" to latestKpi.checkup
+            )
+            additive.forEach { (name, expected) ->
+                val details = repo.branchKpiDetails(latest.first, latest.second, name)
+                assertEquals("$name 院區加總", expected, details.sumOf { it.value }, 0.01)
+                details.forEach { assertEquals(it.value, it.trend3.last()!!, 0.01) }
+            }
+            val occupancy = repo.branchKpiDetails(latest.first, latest.second, "平均佔床率")
+            assertTrue(occupancy.isNotEmpty())
+            assertTrue(occupancy.all { it.value in 0.0..150.0 })
+            val branch = occupancy.first().branch
+            val bedText = repo.branchAnalysisText(branch, "病床利用率")
+            assertTrue(bedText?.contains("病床大類別") == true)
+            val opdText = repo.branchAnalysisText(branch, "門急診服務")
+            assertTrue(opdText?.contains("近三個月門急診") == true)
         } finally {
             db.close()
             tempDb.delete()

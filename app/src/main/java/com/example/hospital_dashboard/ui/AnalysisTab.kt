@@ -1,5 +1,8 @@
 package com.example.hospital_dashboard.ui
 
+import com.example.hospital_dashboard.ui.theme.positiveTextColor
+import com.example.hospital_dashboard.ui.theme.negativeTextColor
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -15,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -115,6 +119,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
     var streamText by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showRealView by rememberSaveable { mutableStateOf(true) }
+    var pastedReport by rememberSaveable { mutableStateOf("") }
 
     fun saveMapping() {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -197,7 +202,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
                             value = config.providerType.label,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Provider Type") },
+                            label = { Text("AI 引擎") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = providerMenu) },
                             modifier = Modifier.fillMaxWidth().menuAnchor().padding(bottom = 6.dp)
                         )
@@ -205,28 +210,33 @@ fun AnalysisTab(vm: DashboardViewModel) {
                             AiProviderType.entries.forEach { t ->
                                 DropdownMenuItem(
                                     text = { Text(t.label) },
-                                    onClick = { config = config.copy(providerType = t); providerMenu = false }
+                                    onClick = {
+                                        config = config.copy(providerType = t, model = t.defaultModel)
+                                        providerMenu = false
+                                    }
                                 )
                             }
                         }
                     }
-                    OutlinedTextField(
-                        value = config.baseUrl,
-                        onValueChange = { config = config.copy(baseUrl = it) },
-                        label = { Text("Base URL（例：http://192.168.1.50:11434/v1）") },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                    )
+                    if (config.providerType.allowsCustomBaseUrl) {
+                        OutlinedTextField(
+                            value = config.baseUrl,
+                            onValueChange = { config = config.copy(baseUrl = it) },
+                            label = { Text("Base URL（本地或自訂 AI）") },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                        )
+                    }
                     OutlinedTextField(
                         value = config.apiKey,
                         onValueChange = { config = config.copy(apiKey = it) },
-                        label = { Text("API Key（本地 Ollama 可留空）") },
+                        label = { Text(if (config.providerType.allowsCustomBaseUrl) "API Key（本地服務可留空）" else "API Key（線上服務必填）") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                     )
                     OutlinedTextField(
                         value = config.model,
                         onValueChange = { config = config.copy(model = it) },
-                        label = { Text("Model Name（例：llama3 / gpt-4o-mini）") },
+                        label = { Text("模型名稱") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                     )
@@ -258,7 +268,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
                                 (r.latencyMs?.let { "（延遲 ${it} ms）" } ?: ""),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (r.ok) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            color = if (r.ok) positiveTextColor() else negativeTextColor()
                         )
                     }
                 }
@@ -268,7 +278,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
         // ── 步驟 1：輸入/載入資料 ──
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
-                Text("📥 步驟 1：輸入/載入資料", style = MaterialTheme.typography.titleSmall,
+                Text("📥 輸入／載入資料", style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
                 Text("分析維度", style = MaterialTheme.typography.labelSmall,
@@ -287,8 +297,9 @@ fun AnalysisTab(vm: DashboardViewModel) {
                     modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 260.dp)
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { showBranchSheet = true }, modifier = Modifier.weight(1f)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showBranchSheet = true }) {
                         Text("📋 產生混淆資料")
                     }
                     Button(
@@ -310,7 +321,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
                                 showPreview = true
                             }
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
                     ) { Text("🔒 脫敏並預覽") }
                     Button(
                         onClick = {
@@ -336,7 +347,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
                             }
                         },
                         enabled = !analyzing,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
                     ) { Text(if (analyzing) "分析中…" else "🚀 開始分析") }
                 }
             }
@@ -347,7 +358,7 @@ fun AnalysisTab(vm: DashboardViewModel) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("🔍 步驟 2：脫敏比對預覽", style = MaterialTheme.typography.titleSmall,
+                        Text("🔍 脫敏比對預覽", style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { showPreview = !showPreview }) {
                             Text(if (showPreview) "收合 ▲" else "展開 ▼")
@@ -356,9 +367,12 @@ fun AnalysisTab(vm: DashboardViewModel) {
                     Text("左：原始文字（僅本機顯示）｜右：將上傳的混淆後文字",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val paneWidth = if (maxWidth < 560.dp) maxWidth else (maxWidth - 8.dp) / 2
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(
-                            Modifier.weight(1f).heightIn(max = 200.dp)
+                            Modifier.width(paneWidth).heightIn(max = 200.dp)
                                 .verticalScroll(rememberScrollState())
                                 .clip(RoundedCornerShape(6.dp))
                                 .padding(8.dp)
@@ -368,14 +382,15 @@ fun AnalysisTab(vm: DashboardViewModel) {
                             Text(originalPreview!!, style = MaterialTheme.typography.labelSmall)
                         }
                         Column(
-                            Modifier.weight(1f).heightIn(max = 200.dp)
+                            Modifier.width(paneWidth).heightIn(max = 200.dp)
                                 .verticalScroll(rememberScrollState())
                                 .clip(RoundedCornerShape(6.dp))
                                 .padding(8.dp)
                         ) {
                             Text("混淆後", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E8449))
+                                color = positiveTextColor())
                             Text(obfuscatedText, style = MaterialTheme.typography.labelSmall)
+                        }
                         }
                     }
                 }
@@ -451,6 +466,27 @@ fun AnalysisTab(vm: DashboardViewModel) {
             }
         }
 
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))) {
+            Column(Modifier.padding(12.dp)) {
+                Text("🔄 外部分析報告混淆還原", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold)
+                Text("將其他工具產生、仍使用混淆代碼的報告貼在此處；還原只在本機執行。",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = pastedReport, onValueChange = { pastedReport = it },
+                    label = { Text("貼上混淆後報告") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+                if (pastedReport.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    val restored = anonymizer.rehydrate(pastedReport)
+                    MarkdownView(restored, Modifier.fillMaxWidth())
+                    OutlinedButton(onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("還原報告", restored))
+                        Toast.makeText(context, "已複製還原報告", Toast.LENGTH_SHORT).show()
+                    }) { Text("複製還原報告") }
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
     }
 
@@ -477,9 +513,8 @@ fun AnalysisTab(vm: DashboardViewModel) {
                                 dict.depts.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Dept) }
                                 dict.doctors.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Doctor) }
                                 dict.clinics.forEach { anonymizer.codeOf(it, Anonymizer.Kind.Clinic) }
-                                val summary = withContext(Dispatchers.IO) { vm.repo.branchAnalysisSummary(br) }
-                                if (summary != null) {
-                                    val original = summary.toText()
+                                val original = withContext(Dispatchers.IO) { vm.repo.branchAnalysisText(br, dimension) }
+                                if (original != null) {
                                     val obf = anonymizer.obfuscate(original)
                                     originalPreview = original
                                     obfuscatedText = obf

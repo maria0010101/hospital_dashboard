@@ -1,5 +1,8 @@
 package com.example.hospital_dashboard.desktop.ui.charts
 
+import com.example.hospital_dashboard.desktop.theme.positiveTextColor
+import com.example.hospital_dashboard.desktop.theme.negativeTextColor
+
 import com.example.hospital_dashboard.desktop.DesktopViewModel
 import com.example.hospital_dashboard.desktop.ui.adaptive.*
 import androidx.compose.foundation.Canvas
@@ -56,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -766,7 +770,7 @@ private fun LineTooltipCard(
                                 (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                color = if (up) positiveTextColor() else negativeTextColor()
                             )
                         } else {
                             Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -792,7 +796,7 @@ private fun LineTooltipCard(
                                     (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                    color = if (up) positiveTextColor() else negativeTextColor()
                                 )
                             }
                         }
@@ -1197,7 +1201,7 @@ private fun UniversalDrillDownCard(
                                                             (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                            color = if (up) positiveTextColor() else negativeTextColor()
                                                         )
                                                     }
                                                 }
@@ -1227,7 +1231,7 @@ private fun UniversalDrillDownCard(
                                                             (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                            color = if (up) positiveTextColor() else negativeTextColor()
                                                         )
                                                     }
                                                 }
@@ -1277,7 +1281,7 @@ private fun UniversalDrillDownCard(
                                                         (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.deltaPct),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                        color = if (up) positiveTextColor() else negativeTextColor()
                                                     )
                                                     Spacer(Modifier.width(6.dp))
                                                 }
@@ -1307,7 +1311,7 @@ private fun UniversalDrillDownCard(
                                                             (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", item.recentDeltaPct),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                                            color = if (up) positiveTextColor() else negativeTextColor()
                                                         )
                                                     }
                                                 }
@@ -1576,7 +1580,7 @@ private fun DrillStatCard(
                                 (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", recDelta),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                color = if (up) positiveTextColor() else negativeTextColor()
                             )
                         }
                     }
@@ -1608,7 +1612,7 @@ private fun DrillStatCard(
                                 (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                color = if (up) positiveTextColor() else negativeTextColor()
                             )
                         }
                     }
@@ -1696,7 +1700,7 @@ private fun DrillStatCard(
                                     (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", delta),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                    color = if (up) positiveTextColor() else negativeTextColor()
                                 )
                             }
                         }
@@ -1731,7 +1735,7 @@ private fun DrillStatCard(
                                 (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", recDelta),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                color = if (up) positiveTextColor() else negativeTextColor()
                             )
                         }
                     }
@@ -1863,7 +1867,7 @@ private fun BranchDeptCard(
                                     (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                    color = if (up) positiveTextColor() else negativeTextColor()
                                 )
                             } else {
                                 Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -1943,7 +1947,7 @@ private fun DivDeptCard(
                                 val up = d >= 0
                                 Text("去年同期 ${Fmt.compact(opdPrior)} ($sign${String.format("%.1f%%", d)})",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                    color = if (up) positiveTextColor() else negativeTextColor())
                             }
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -2018,7 +2022,7 @@ private fun IpdDivDeptCard(
                                 val up = d >= 0
                                 Text("人日去年同期 ${Fmt.compact(daysPrior)} ($sign${String.format("%.1f%%", d)})",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                    color = if (up) positiveTextColor() else negativeTextColor())
                             }
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -2093,7 +2097,7 @@ private fun OffsiteBranchCard(
                                 val up = d >= 0
                                 Text("去年同期 ${Fmt.compact(totalPrior)} ($sign${String.format("%.1f%%", d)})",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                    color = if (up) positiveTextColor() else negativeTextColor())
                             }
                         }
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -2169,7 +2173,7 @@ private fun BedBranchCard(
                                     (if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                    color = if (up) positiveTextColor() else negativeTextColor()
                                 )
                             }
                         }
@@ -2241,7 +2245,7 @@ private fun BedCategoryCard(
                                     Spacer(Modifier.width(8.dp))
                                     Text((if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
                                         style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                        color = if (up) positiveTextColor() else negativeTextColor())
                                 }
                             }
                         }
@@ -2319,7 +2323,7 @@ private fun MetricOverlayCard(
                                     Text((if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B))
+                                        color = if (up) positiveTextColor() else negativeTextColor())
                                     Spacer(Modifier.width(8.dp))
                                     Text("去年 ${def.fmt(p)}", style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.outline)
@@ -2368,7 +2372,7 @@ private fun Recent3Line(
                     (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                    color = if (up) positiveTextColor() else negativeTextColor()
                 )
             }
         }
@@ -2481,7 +2485,7 @@ private fun DeptMetricLine(
                         (if (pct) String.format("%+.1f%%", delta) else String.format("%+.1f天", delta)),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                    color = if (up) positiveTextColor() else negativeTextColor()
                 )
             } else {
                 Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -2510,7 +2514,7 @@ private fun TrendMetricRow(name: String, values: List<Double>, fmt: (Double) -> 
                 (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                color = if (up) positiveTextColor() else negativeTextColor()
             )
         }
     }
@@ -2533,7 +2537,7 @@ private fun YoyMetricLine(name: String, cur: Double, prior: Double?, fmt: (Doubl
                     (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                    color = if (up) positiveTextColor() else negativeTextColor()
                 )
             } else {
                 Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -2675,7 +2679,7 @@ fun IncomeDetailSheet(vm: DesktopViewModel, ym: Int, onDismiss: () -> Unit) {
                                         (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", deltaPct),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                                        color = if (up) positiveTextColor() else negativeTextColor()
                                     )
                                 }
                             }
@@ -2865,6 +2869,7 @@ fun LineChart(
         Spacer(Modifier.height(4.dp))
         val textMeasurer = rememberTextMeasurer()
         val labelStyle = TextStyle(fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
         var canvasSize by remember { mutableStateOf(IntSize.Zero) }
         val density = LocalDensity.current
 
@@ -2896,7 +2901,7 @@ fun LineChart(
                 val t = i.toFloat() / gridN
                 val y = geo.topPad + geo.chartH * t
                 val v = geo.yMax - (geo.yMax - geo.yMin) * t
-                drawLine(Color(0xFFE0E0E0), Offset(geo.labelW, y), Offset(geo.labelW + geo.chartW, y), strokeWidth = 1f)
+                drawLine(gridColor, Offset(geo.labelW, y), Offset(geo.labelW + geo.chartW, y), strokeWidth = 1f)
                 drawText(textMeasurer, yFormatter(v), topLeft = Offset(2.dp.toPx(), y - labelH / 2), style = labelStyle)
             }
 
@@ -3222,6 +3227,7 @@ fun VBarChart(
         if (segNames.size > 1) { Legend(segNames); Spacer(Modifier.height(4.dp)) }
         val textMeasurer = rememberTextMeasurer()
         val labelStyle = TextStyle(fontSize = 9.sp, color = MaterialTheme.colorScheme.outline)
+        val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
         Canvas(
             Modifier
                 .fillMaxWidth()
@@ -3261,7 +3267,7 @@ fun VBarChart(
                 val t = i / 4f
                 val y = topPad + chartH * t
                 val v = scaleMax * (1 - t)
-                drawLine(Color(0xFFE0E0E0), Offset(labelW, y), Offset(labelW + chartW, y), strokeWidth = 1f)
+                drawLine(gridColor, Offset(labelW, y), Offset(labelW + chartW, y), strokeWidth = 1f)
                 drawText(textMeasurer, valueFormatter(v), topLeft = Offset(2.dp.toPx(), y - 7.dp.toPx()), style = labelStyle)
             }
             // X 標籤：依標籤寬度與可用寬度自動決定間距(縮放後視窗變窄 → 更多標籤)
@@ -3433,7 +3439,7 @@ private fun IncomeSliceCard(s: DashboardRepo.IncomeSliceStat, index: Int, total:
                         Text(
                             (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
                             style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            color = if (up) positiveTextColor() else negativeTextColor()
                         )
                     }
                 }
@@ -3453,7 +3459,7 @@ private fun IncomeSliceCard(s: DashboardRepo.IncomeSliceStat, index: Int, total:
                         Text(
                             (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", deltaPct),
                             style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                            color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                            color = if (up) positiveTextColor() else negativeTextColor()
                         )
                     } else {
                         Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -3507,7 +3513,9 @@ fun DataTable(data: TableData, modifier: Modifier = Modifier, onRowClick: ((Int)
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(cell.text, style = cellStyle,
-                            color = if (bg != null) Color.Black else MaterialTheme.colorScheme.onSurface)
+                            color = if (bg != null) {
+                                if (Color(bg).luminance() > 0.45f) Color.Black else Color.White
+                            } else MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

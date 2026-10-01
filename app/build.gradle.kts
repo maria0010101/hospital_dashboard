@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.hospital_dashboard"
         minSdk = 24
         targetSdk = 37
-        versionCode = 11
-        versionName = "0.8.0"
+        versionCode = 12
+        versionName = "0.8.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

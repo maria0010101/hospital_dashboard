@@ -1,10 +1,14 @@
 package com.example.hospital_dashboard.ui
 
+import com.example.hospital_dashboard.ui.theme.positiveTextColor
+import com.example.hospital_dashboard.ui.theme.negativeTextColor
+
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -60,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hospital_dashboard.DashboardViewModel
@@ -83,21 +88,13 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            "🏥 醫院營運儀表板",
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.adaptiveMarquee()
-                        )
-                        Text(
-                            "📅 資料更新日期：${state.updateDate ?: "未知"}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            modifier = Modifier.adaptiveMarquee()
-                        )
-                    }
+                    Text(
+                        "🏥 醫院營運儀表板",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 },
                 actions = {
                     if (size.isCompact) {
@@ -114,6 +111,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
             Column(
                 Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())
             ) {
+                DataUpdateLabel(state.updateDate)
                 KpiRow(vm)
                 AdaptiveTabs(
                     size = size,
@@ -144,6 +142,7 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
                 Column(
                     Modifier.weight(1f).fillMaxHeight()
                 ) {
+                    DataUpdateLabel(state.updateDate)
                     KpiRow(vm)
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         when (tabIndex) {
@@ -164,6 +163,15 @@ fun DashboardScreen(vm: DashboardViewModel, state: UiState.Ready) {
     if (showFilters) {
         FilterSheet(vm, filters, onDismiss = { showFilters = false })
     }
+}
+
+@Composable
+private fun DataUpdateLabel(updateDate: String?) {
+    Text("📅 資料更新日期：${updateDate ?: "未知"}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        maxLines = 2)
 }
 
 // ── KPI 列(固定最新月份 + 去年同期，與圖表篩選分離) ──
@@ -187,7 +195,7 @@ private fun KpiRow(vm: DashboardViewModel) {
     }
     val k = cur ?: return
     val m = month
-    var showSheet by remember { mutableStateOf(false) }
+    var selectedMetric by remember { mutableStateOf<KpiDef?>(null) }
 
     fun delta(c: Double, p: Double?): Double? =
         if (p == null || p == 0.0) null else (c - p) / p * 100
@@ -198,31 +206,24 @@ private fun KpiRow(vm: DashboardViewModel) {
         KpiDef("總診次", k.sessions, delta(k.sessions, prev?.sessions), Fmt::compact),
         KpiDef("住院人次", k.ipdAdm, delta(k.ipdAdm, prev?.ipdAdm), Fmt::compact),
         KpiDef("住院人日", k.ipdDays, delta(k.ipdDays, prev?.ipdDays), Fmt::compact),
-        KpiDef("平均佔床率", k.occ, delta(k.occ, prev?.occ), Fmt::percent),
+        KpiDef("平均佔床率", k.occ, prev?.let { k.occ - it.occ }, Fmt::percent),
         KpiDef("院外門診", k.offsite, delta(k.offsite, prev?.offsite), Fmt::compact),
         KpiDef("洗腎人次", k.dialysis, delta(k.dialysis, prev?.dialysis), Fmt::compact),
         KpiDef("健檢人次", k.checkup, delta(k.checkup, prev?.checkup), Fmt::compact),
     )
 
-    // 標題列：最新月份 + 點擊查看各院區
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(enabled = m != null) { showSheet = true }
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    // 標題列只提供說明；各 KPI 卡片分別展開對應指標。
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Text(
             "📅 最新月份 ${m?.let { formatMonth(it.first, it.second) } ?: "—"} 與去年同期比較",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f).adaptiveMarquee(),
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
-        Spacer(Modifier.width(6.dp))
-        Text("🔍 各院區明細", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary, maxLines = 1)
+        Text("點擊指標查看各院區明細", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     val size = currentAdaptiveSize()
@@ -232,35 +233,29 @@ private fun KpiRow(vm: DashboardViewModel) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(defs) { d ->
-                KpiCard(d)
+                KpiCard(d, modifier = Modifier.clickable { selectedMetric = d })
             }
         }
     } else {
-        val cols = if (size.isExpanded) 5 else 3
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            defs.chunked(cols).forEach { rowDefs ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowDefs.forEach { d ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            KpiCard(d, modifier = Modifier.fillMaxWidth())
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            val cols = (maxWidth / 160.dp).toInt().coerceIn(1, 5)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                defs.chunked(cols).forEach { rowDefs ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowDefs.forEach { d ->
+                            KpiCard(d, modifier = Modifier.weight(1f).clickable { selectedMetric = d })
                         }
-                    }
-                    repeat(cols - rowDefs.size) {
-                        Spacer(Modifier.weight(1f))
+                        repeat(cols - rowDefs.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
         }
     }
 
-    if (showSheet && m != null) {
-        BranchSummarySheet(vm, m.first, m.second, onDismiss = { showSheet = false })
+    if (selectedMetric != null && m != null) {
+        BranchSummarySheet(vm, m.first, m.second, selectedMetric!!, onDismiss = { selectedMetric = null })
     }
 }
 
@@ -277,10 +272,11 @@ private fun BranchSummarySheet(
     vm: DashboardViewModel,
     year: String,
     month: String,
+    metric: KpiDef,
     onDismiss: () -> Unit
 ) {
-    val stats by produceState<List<DashboardRepo.BranchMonthStat>>(emptyList(), year, month) {
-        value = withContext(Dispatchers.IO) { vm.repo.branchStatsForMonth(year, month) }
+    val stats by produceState<List<DashboardRepo.BranchKpiDetail>>(emptyList(), year, month, metric.title) {
+        value = withContext(Dispatchers.IO) { vm.repo.branchKpiDetails(year, month, metric.title) }
     }
     val priorY = year.toIntOrNull()?.minus(1)?.toString() ?: year
 
@@ -289,7 +285,7 @@ private fun BranchSummarySheet(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
             Text(
-                "🏢 ${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
+                "🏢 ${metric.title}｜${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -299,8 +295,26 @@ private fun BranchSummarySheet(
                 color = MaterialTheme.colorScheme.outline
             )
             Spacer(Modifier.height(8.dp))
-            stats.forEach { s -> BranchStatCard(s) }
+            if (stats.isEmpty()) Text("此月份沒有可顯示的院區資料")
+            stats.forEach { s -> BranchKpiCard(s, metric) }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun BranchKpiCard(s: DashboardRepo.BranchKpiDetail, metric: KpiDef) {
+    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("🏢 ${s.branch}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            val pp = metric.title.contains("佔床率")
+            val fmt = if (pp) Fmt::percent else Fmt::int
+            Text("本月原始數據：${fmt(s.value)}", style = MaterialTheme.typography.bodyMedium)
+            val change = s.prior?.let { if (pp) s.value - it else if (it != 0.0) (s.value - it) / it * 100 else null }
+            Text("去年同期：${s.prior?.let(fmt) ?: "—"}  ${change?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("近三個月：${s.trend3.joinToString(" → ") { it?.let(fmt) ?: "—" }}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -356,7 +370,7 @@ private fun MetricLine(
                         (if (pp) String.format("%+.1fpp", delta) else String.format("%+.1f%%", delta)),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (up) Color(0xFF1E8449) else Color(0xFFC0392B)
+                    color = if (up) positiveTextColor() else negativeTextColor()
                 )
             } else {
                 Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -397,10 +411,9 @@ private fun KpiCard(d: KpiDef, modifier: Modifier = Modifier) {
             if (d.delta != null) {
                 val up = d.delta >= 0
                 Text(
-                    String.format("%+.1f%%", d.delta),
+                    String.format(if (d.title.contains("佔床率")) "%+.1fpp" else "%+.1f%%", d.delta),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (up) androidx.compose.ui.graphics.Color(0xFF1E8449)
-                    else androidx.compose.ui.graphics.Color(0xFFC0392B),
+                    color = if (up) positiveTextColor() else negativeTextColor(),
                     maxLines = 1,
                     modifier = Modifier.adaptiveMarquee()
                 )
@@ -431,6 +444,7 @@ private fun FilterSheet(
     var depts by remember { mutableStateOf(filters.depts) }
     var yoy by remember { mutableStateOf(filters.showYoy) }
     var showHospitalTotal by remember { mutableStateOf(filters.showHospitalTotal) }
+    var paletteIndex by remember { mutableIntStateOf(vm.paletteIndex.value) }
 
     val yearOpts = remember { vm.availableYears() }
     val monthOpts = remember { vm.availableMonths() }
@@ -447,6 +461,8 @@ private fun FilterSheet(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
             Text("⚙ 篩選條件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("資料範圍與呈現方式", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
 
             SectionLabel("📅 年度（至少一項）")
@@ -560,6 +576,15 @@ private fun FilterSheet(
                 Switch(checked = yoy, onCheckedChange = { yoy = it })
             }
 
+            SectionLabel("🎨 顯示與外觀")
+            Text("配色模式", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("典雅紫", "專業藍", "清新青").forEachIndexed { i, label ->
+                    FilterChip(selected = paletteIndex == i, onClick = {
+                        paletteIndex = i; vm.setPaletteIndex(i)
+                    }, label = { Text(label) })
+                }
+            }
             SectionLabel("🌙 深色模式")
             var isDark by remember { mutableStateOf(vm.isDarkMode.value) }
             Row(
@@ -658,6 +683,8 @@ private fun FilterSheet(
                         vm.setFontScaleLevel(0)
                         isDark = false
                         vm.setDarkMode(false)
+                        paletteIndex = 0
+                        vm.setPaletteIndex(0)
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("重設") }
