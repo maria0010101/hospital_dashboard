@@ -82,17 +82,38 @@ class JdbcHospitalDbTest {
                 "門診人次" to latestKpi.opd, "急診人次" to latestKpi.er,
                 "總診次" to latestKpi.sessions, "住院人次" to latestKpi.ipdAdm,
                 "住院人日" to latestKpi.ipdDays, "院外門診" to latestKpi.offsite,
-                "血液透析" to latestKpi.dialysis, "健檢人次" to latestKpi.checkup
+                "血液透析" to latestKpi.dialysis, "健檢人次" to latestKpi.checkup,
+                "總收入" to latestKpi.incomeTotal, "自費收入" to latestKpi.incomeSelf
             )
             additive.forEach { (name, expected) ->
                 val details = repo.branchKpiDetails(latest.first, latest.second, name)
                 assertEquals("$name 院區加總", expected, details.sumOf { it.value }, 0.01)
                 details.forEach { assertEquals(it.value, it.trend3.last()!!, 0.01) }
             }
-            val occupancy = repo.branchKpiDetails(latest.first, latest.second, "平均佔床率")
+            val occupancy = repo.branchKpiDetails(latest.first, latest.second, "總佔床率(實開病床)")
             assertTrue(occupancy.isNotEmpty())
             assertTrue(occupancy.all { it.value in 0.0..150.0 })
+            val bedTotals = db.query(
+                "SELECT SUM(CAST(admission_days AS REAL)), SUM(CAST(actual_bed_days AS REAL)) " +
+                    "FROM bed_type_service WHERE year=? AND month=? AND " +
+                    "(major_category IS NULL OR TRIM(major_category) NOT IN ('其他','產後（小孩）','產後(小孩)'))",
+                arrayOf(latest.first, latest.second)
+            ).single()
+            val weighted = (bedTotals[0] as Number).toDouble() / (bedTotals[1] as Number).toDouble() * 100
+            assertEquals("全院總佔床率應為住院人日／實際床日數", weighted, latestKpi.occ, 0.0001)
             val branch = occupancy.first().branch
+            val anchorMonth = latest.second.toInt()
+            val branchYtd = db.query(
+                "SELECT SUM(CAST(admission_days AS REAL)), SUM(CAST(actual_bed_days AS REAL)) " +
+                    "FROM bed_type_service WHERE branch_name=? AND year=? AND CAST(month AS INTEGER) <= ? AND " +
+                    "(major_category IS NULL OR TRIM(major_category) NOT IN ('其他','產後（小孩）','產後(小孩)'))",
+                arrayOf(branch, latest.first, anchorMonth)
+            ).single()
+            assertEquals(
+                "院區年度佔床率必須先合計人日／床日再相除",
+                (branchYtd[0] as Number).toDouble() / (branchYtd[1] as Number).toDouble() * 100,
+                occupancy.first().ytd!!, 0.0001
+            )
             val bedText = repo.branchAnalysisText(branch, "病床利用率")
             assertTrue(bedText?.contains("病床大類別") == true)
             val opdText = repo.branchAnalysisText(branch, "門急診服務")

@@ -29,6 +29,7 @@ local.properties
 build/
 **/build/
 dist/
+*.apk
 *.msi
 *.exe
 *.zip
@@ -38,4 +39,3 @@ ai_config.json
 anonymizer_map.json
 settings.json
 hospital_data.db
-

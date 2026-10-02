@@ -115,8 +115,15 @@
 
 此補充以目前三模組程式碼為準；前述 2026-09-11 單模組清單是歷史基準，不能視為目前模組路徑。
 
-- **共同資料層**：`core/src/main/kotlin/com/example/hospital_dashboard/data/DashboardRepo.kt` 提供 Android/桌面相同的 KPI (`kpiForMonth`)、按單一指標展開院區近三個月與去年同期 (`branchKpiDetails`)、以及按分析焦點擷取本機營運文字 (`branchAnalysisText`)。所有值直接由既有工作表映射到的 SQLite 表查詢，不在 UI 重新聚合。KPI 佔床率延續 `kpiForMonth` 原有排除大類與有效數值後之 AVG 口徑；病床分類圖表維持既有「住院人日/實際床日」加權口徑，兩者不可混稱。
+- **共同資料層（0.8.1 當時口徑）**：`core/src/main/kotlin/com/example/hospital_dashboard/data/DashboardRepo.kt` 提供 Android/桌面相同的 KPI (`kpiForMonth`)、按單一指標展開院區近三個月與去年同期 (`branchKpiDetails`)、以及按分析焦點擷取本機營運文字 (`branchAnalysisText`)。所有值直接由既有工作表映射到的 SQLite 表查詢，不在 UI 重新聚合。當時 KPI 佔床率延續排除大類與有效數值後之 AVG 口徑；病床分類圖表為「住院人日/實際床日」加權口徑，此差異已由 0.8.2 修改。
 - **AI 協定與隱私**：`core/.../AiConfig.kt` 為線上服務選擇官方固定 URL，本地/自架才接受自訂 Base URL；`AiClient.kt` 負責 SSE。`Anonymizer.kt` 的雙向對照表僅存本機。兩平台的 `ui/AnalysisTab.kt` 都可將外部混淆報告貼回本機還原。
 - **Android UI**：`app/src/main/java/com/example/hospital_dashboard/ui/{DashboardScreen,DashboardTabs,AnalysisTab}.kt`；`ui/theme/Theme.kt` 依深淺色與三組配色建立 Material 3 色板；`MainActivity.kt` 注入可調字級。
 - **桌面 UI**：`desktop/src/main/kotlin/com/example/hospital_dashboard/desktop/{Main.kt,ui/DashboardScreen.kt,ui/DashboardTabs.kt,ui/AnalysisTab.kt}`；`Main.kt` 依視窗寬度與字級提供 CompositionLocal，圖表採自適應最低欄寬，不再固定 3 欄。
 - **驗證**：`core/src/test/kotlin/com/example/hospital_dashboard/data/{JdbcHospitalDbTest,AiFlowTest}.kt`；指定本機 Excel 的條件測試僅檢查筆數、KPI 與院區回推一致性，不將真實資料加入版控、fixture 或文件。
+
+## 2026-10-02 現況補充：0.8.2 KPI 與收入累計口徑
+
+- **當月總佔床率（實開病床）**：`DashboardRepo.kpiForMonth`、`kpiSet` 與 `branchKpiDetails` 共用 `bedActualOccSql()`，由 `bed_type_service` 的住院人日合計除以實際床日數合計，再乘 100 顯示百分比。KPI 專用的 `KPI_BED_EXCLUDE_MAJOR_SQL` 排除大類「其他」、「產後（小孩）」（亦接受半形括號異體）；既有病床圖表的其他排除條件不受更動。
+- **KPI 院區明細**：`branchKpiDetails(year, month, metric)` 除當月、去年同月與近三月外，另查指定年及前一年各自 1 月至錨點月的累計。計數與收入採 SUM；佔床率對整個期間的人日、床日各自 SUM 後相除，不平均各月比率。新增總收入與自費收入，來源均為 `ops_management_indicators` 的門診及住院對應欄位相加。
+- **「其他」分頁收入累計圖**：`branchTotalIncomeYoyBar`、`branchSelfPayIncomeYoyBar` 透過共用查詢，從所選篩選內最新收入年月取得錨點；今年與去年都僅查該年 1 月至錨點月，單位千元。篩選月份決定錨點，但累計內容維持 1 月至錨點月。
+- **驗證**：`KpiYtdRegressionTest` 以不等權床日和去年 12 月干擾資料確認分子／分母與同期截止月份；`JdbcHospitalDbTest` 使用本機指定活頁簿時交叉核對 10 項加總指標、全院及院區加權佔床率，不提交活頁簿或實際數字。

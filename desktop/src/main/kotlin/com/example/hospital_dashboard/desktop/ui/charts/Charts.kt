@@ -2711,7 +2711,8 @@ private fun Legend(names: List<String>) {
                         .background(boxColor)
                 )
                 Spacer(Modifier.width(4.dp))
-                Text(n, style = MaterialTheme.typography.labelSmall)
+                Text(n, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }

@@ -46,13 +46,14 @@ data class TableData(val columns: List<String>, val rows: List<List<TableCell>>)
     companion object { val EMPTY = TableData(emptyList(), emptyList()) }
 }
 
-/** 9 項 KPI。 */
+/** 11 項 KPI；佔床率以住院人日／實際床日數計算。 */
 data class KpiSet(
     val opd: Double, val er: Double, val sessions: Double,
     val ipdAdm: Double, val ipdDays: Double, val occ: Double,
-    val offsite: Double, val dialysis: Double, val checkup: Double
+    val offsite: Double, val dialysis: Double, val checkup: Double,
+    val incomeTotal: Double, val incomeSelf: Double
 ) {
-    companion object { val EMPTY = KpiSet(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) }
+    companion object { val EMPTY = KpiSet(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) }
 }
 
 data class DeptIpdStat(val dept: String, val adm: Double, val los: Double)

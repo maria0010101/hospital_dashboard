@@ -206,10 +206,12 @@ private fun KpiRow(vm: DashboardViewModel) {
         KpiDef("總診次", k.sessions, delta(k.sessions, prev?.sessions), Fmt::compact),
         KpiDef("住院人次", k.ipdAdm, delta(k.ipdAdm, prev?.ipdAdm), Fmt::compact),
         KpiDef("住院人日", k.ipdDays, delta(k.ipdDays, prev?.ipdDays), Fmt::compact),
-        KpiDef("平均佔床率", k.occ, prev?.let { k.occ - it.occ }, Fmt::percent),
+        KpiDef("總佔床率(實開病床)", k.occ, prev?.let { k.occ - it.occ }, Fmt::percent),
         KpiDef("院外門診", k.offsite, delta(k.offsite, prev?.offsite), Fmt::compact),
         KpiDef("洗腎人次", k.dialysis, delta(k.dialysis, prev?.dialysis), Fmt::compact),
         KpiDef("健檢人次", k.checkup, delta(k.checkup, prev?.checkup), Fmt::compact),
+        KpiDef("總收入", k.incomeTotal, delta(k.incomeTotal, prev?.incomeTotal), Fmt::money),
+        KpiDef("自費收入", k.incomeSelf, delta(k.incomeSelf, prev?.incomeSelf), Fmt::money),
     )
 
     // 標題列只提供說明；各 KPI 卡片分別展開對應指標。
@@ -309,11 +311,19 @@ private fun BranchKpiCard(s: DashboardRepo.BranchKpiDetail, metric: KpiDef) {
             Text("🏢 ${s.branch}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             val pp = metric.title.contains("佔床率")
             val fmt = if (pp) Fmt::percent else Fmt::int
-            Text("本月原始數據：${fmt(s.value)}", style = MaterialTheme.typography.bodyMedium)
+            val unit = if (metric.title.contains("收入")) " 元" else ""
+            fun display(value: Double?): String = value?.let { fmt(it) + unit } ?: "—"
+            Text("本月數據：${display(s.value)}", style = MaterialTheme.typography.bodyMedium)
             val change = s.prior?.let { if (pp) s.value - it else if (it != 0.0) (s.value - it) / it * 100 else null }
-            Text("去年同期：${s.prior?.let(fmt) ?: "—"}  ${change?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
+            Text("去年同期：${display(s.prior)}  ${change?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("近三個月：${s.trend3.joinToString(" → ") { it?.let(fmt) ?: "—" }}",
+            Text("近三個月：${s.trend3.joinToString(" → ") { display(it) }}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("今年度累計至當月：${display(s.ytd)}", style = MaterialTheme.typography.bodyMedium)
+            val ytdChange = s.priorYtd?.let { prior ->
+                s.ytd?.let { current -> if (pp) current - prior else if (prior != 0.0) (current - prior) / prior * 100 else null }
+            }
+            Text("去年同期累計至當月：${display(s.priorYtd)}  ${ytdChange?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

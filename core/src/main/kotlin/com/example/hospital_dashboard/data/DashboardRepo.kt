@@ -195,10 +195,8 @@ class DashboardRepo(private val db: HospitalDb) {
                 arrayOf(year, month)
             ) ?: 0.0
         val occ = (db.queryDouble(
-            """SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service
-               WHERE $BED_OCC_EXCLUDE_MAJOR_SQL
-                 AND actual_occupancy_rate IS NOT NULL
-                 AND CAST(actual_occupancy_rate AS REAL) > 0 AND year=? AND month=?""",
+            """SELECT ${bedActualOccSql()} FROM bed_type_service
+               WHERE $KPI_BED_EXCLUDE_MAJOR_SQL AND year=? AND month=?""",
             arrayOf(year, month)
         ) ?: 0.0) * 100.0
         return KpiSet(
@@ -211,7 +209,11 @@ class DashboardRepo(private val db: HospitalDb) {
             offsite = sumT("offsite_clinic_service", "total"),
             dialysis = sumT("accounting_report", "dialysis_count"),
             checkup = sumT("accounting_report", "opd_checkup_count") +
-                sumT("accounting_report", "admission_checkup_count")
+                sumT("accounting_report", "admission_checkup_count"),
+            incomeTotal = sumT("ops_management_indicators", "total_income_opd") +
+                sumT("ops_management_indicators", "total_income_admission"),
+            incomeSelf = sumT("ops_management_indicators", "self_pay_income_opd") +
+                sumT("ops_management_indicators", "self_pay_income_admission")
         )
     }
 
@@ -246,12 +248,14 @@ class DashboardRepo(private val db: HospitalDb) {
         }
     }
 
-    /** KPI 卡片專屬院區明細。口徑與 kpiForMonth 相同，月份以錨點月往前推兩個月。 */
+    /** KPI 卡片專屬院區明細；YTD 固定為當年 1 月至錨點月，不平均各月百分比。 */
     data class BranchKpiDetail(
         val branch: String,
         val value: Double,
         val prior: Double?,
-        val trend3: List<Double?>
+        val trend3: List<Double?>,
+        val ytd: Double?,
+        val priorYtd: Double?
     )
 
     fun branchKpiDetails(year: String, month: String, metric: String): List<BranchKpiDetail> {
@@ -264,23 +268,31 @@ class DashboardRepo(private val db: HospitalDb) {
             "總診次" -> "outpatient_service" to "SUM(CAST(total_clinic_sessions AS REAL))"
             "住院人次" -> "inpatient_service" to "SUM(CAST(admission_count AS REAL))"
             "住院人日" -> "inpatient_service" to "SUM(CAST(admission_days AS REAL))"
-            "佔床率", "平均佔床率" -> "bed_type_service" to avgCast("actual_occupancy_rate")
+            "總佔床率(實開病床)" -> "bed_type_service" to bedActualOccSql()
             "院外門診" -> "offsite_clinic_service" to "SUM(CAST(total AS REAL))"
             "血液透析", "洗腎人次" -> "accounting_report" to "SUM(CAST(dialysis_count AS REAL))"
             "健檢人次" -> "accounting_report" to
                 "COALESCE(SUM(CAST(opd_checkup_count AS REAL)),0)+COALESCE(SUM(CAST(admission_checkup_count AS REAL)),0)"
+            "總收入" -> "ops_management_indicators" to
+                "COALESCE(SUM(CAST(total_income_opd AS REAL)),0)+COALESCE(SUM(CAST(total_income_admission AS REAL)),0)"
+            "自費收入" -> "ops_management_indicators" to
+                "COALESCE(SUM(CAST(self_pay_income_opd AS REAL)),0)+COALESCE(SUM(CAST(self_pay_income_admission AS REAL)),0)"
             else -> return emptyList()
         }
         val isOccupancy = table == "bed_type_service"
         val months = listOf(monthBack(y, m, 2), monthBack(y, m, 1), y to m, (y - 1) to m)
         val (condition, params) = ymInCond(months)
-        val extra = if (isOccupancy)
-            " AND $BED_OCC_EXCLUDE_MAJOR_SQL AND actual_occupancy_rate IS NOT NULL AND CAST(actual_occupancy_rate AS REAL) > 0"
-        else ""
+        val extra = if (isOccupancy) " AND $KPI_BED_EXCLUDE_MAJOR_SQL" else ""
         val rows = db.query(
             "SELECT branch_name, year, month, $expression FROM $table WHERE $condition$extra " +
                 "GROUP BY branch_name, year, month", params
         )
+        val ytdRows = db.query(
+            "SELECT branch_name, year, $expression FROM $table WHERE year IN (?,?) " +
+                "AND CAST(month AS INTEGER) BETWEEN 1 AND ?$extra GROUP BY branch_name, year",
+            arrayOf(y.toString(), (y - 1).toString(), m)
+        )
+        val ytdByBranchYear = ytdRows.associate { (it[0]?.toString().orEmpty() to it[1]?.toString().orEmpty()) to num(it[2]) }
         val grouped = rows.groupBy { it[0]?.toString().orEmpty() }
         return grouped.mapNotNull { (branch, values) ->
             if (branch.isBlank()) return@mapNotNull null
@@ -288,7 +300,11 @@ class DashboardRepo(private val db: HospitalDb) {
                 it[1]?.toString()?.toIntOrNull() == key.first && it[2]?.toString()?.toIntOrNull() == key.second
             }?.let { num(it[3])?.times(if (isOccupancy) 100.0 else 1.0) }
             val current = at(y to m) ?: return@mapNotNull null
-            BranchKpiDetail(branch, current, at((y - 1) to m), months.take(3).map(::at))
+            BranchKpiDetail(
+                branch, current, at((y - 1) to m), months.take(3).map(::at),
+                ytdByBranchYear[branch to y.toString()]?.times(if (isOccupancy) 100.0 else 1.0),
+                ytdByBranchYear[branch to (y - 1).toString()]?.times(if (isOccupancy) 100.0 else 1.0)
+            )
         }.sortedByDescending { it.value }
     }
 
@@ -340,10 +356,8 @@ class DashboardRepo(private val db: HospitalDb) {
         fun sumT(t: String, col: String, w: String, p: Array<Any?>): Double =
             db.queryDouble("SELECT SUM(CAST($col AS REAL)) FROM $t WHERE $w", p) ?: 0.0
         val occ = (db.queryDouble(
-            """SELECT ${avgCast("actual_occupancy_rate")} FROM bed_type_service
-               WHERE $BED_OCC_EXCLUDE_MAJOR_SQL
-                 AND actual_occupancy_rate IS NOT NULL
-                 AND CAST(actual_occupancy_rate AS REAL) > 0 AND $wN""", pN
+            """SELECT ${bedActualOccSql()} FROM bed_type_service
+               WHERE $KPI_BED_EXCLUDE_MAJOR_SQL AND $wN""", pN
         ) ?: 0.0) * 100.0
         return KpiSet(
             opd = sumT("outpatient_service", "opd_visit_count", wD, pD),
@@ -355,7 +369,11 @@ class DashboardRepo(private val db: HospitalDb) {
             offsite = sumT("offsite_clinic_service", "total", wN, pN),
             dialysis = sumT("accounting_report", "dialysis_count", wN, pN),
             checkup = sumT("accounting_report", "opd_checkup_count", wN, pN) +
-                sumT("accounting_report", "admission_checkup_count", wN, pN)
+                sumT("accounting_report", "admission_checkup_count", wN, pN),
+            incomeTotal = sumT("ops_management_indicators", "total_income_opd", wN, pN) +
+                sumT("ops_management_indicators", "total_income_admission", wN, pN),
+            incomeSelf = sumT("ops_management_indicators", "self_pay_income_opd", wN, pN) +
+                sumT("ops_management_indicators", "self_pay_income_admission", wN, pN)
         )
     }
 
@@ -2832,108 +2850,67 @@ class DashboardRepo(private val db: HospitalDb) {
     fun incomeSelfBranchBar(f: Filters): HBarData =
         buildYoyHBar(f, "ops_management_indicators", "branch_name", "self_pay_income_opd + self_pay_income_admission", "自費收入", unit = "元", customFormatter = Fmt::money)
 
-    /** 各院區總收入(累計，單位千元；重疊橫條含去年同期半透明比對)。 */
-    fun branchTotalIncomeYoyBar(f: Filters): HBarData {
-        val isBranchTotal = f.showHospitalTotal
-        val selDim = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
-        val grpDim = if (isBranchTotal) "" else "GROUP BY branch_name"
-        val (w, p) = whereFor(f, false, 0)
-        val whereClause = if (!isBranchTotal) "$w AND branch_name IS NOT NULL AND branch_name != ''" else w
-        val curRows = db.query(
-            "SELECT $selDim, (SUM(CAST(total_income_opd AS REAL)) + SUM(CAST(total_income_admission AS REAL))) / 1000.0 " +
-                "FROM ops_management_indicators WHERE $whereClause $grpDim", p)
-        val curMap = curRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
+    /** 各院區收入今年 1 月至錨點月累計，與去年 1 月至同月比較（千元）。 */
+    fun branchTotalIncomeYoyBar(f: Filters): HBarData =
+        branchIncomeYtdBar(f, "total_income_opd", "total_income_admission", "總收入")
 
-        val yoyMap = if (f.showYoy) {
-            val (wy, py) = whereFor(f, false, -1)
-            val whereY = if (!isBranchTotal) "$wy AND branch_name IS NOT NULL AND branch_name != ''" else wy
-            val yRows = db.query(
-                "SELECT $selDim, (SUM(CAST(total_income_opd AS REAL)) + SUM(CAST(total_income_admission AS REAL))) / 1000.0 " +
-                    "FROM ops_management_indicators WHERE $whereY $grpDim", py)
-            yRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
-        } else emptyMap()
+    fun branchSelfPayIncomeYoyBar(f: Filters): HBarData =
+        branchIncomeYtdBar(f, "self_pay_income_opd", "self_pay_income_admission", "自費收入")
 
-        val allBranches = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
-        val items = allBranches.map { b ->
-            val cur = curMap[b] ?: 0.0
-            val prev = yoyMap[b] ?: 0.0
-            Triple(b, cur, prev)
-        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
-
-        if (f.showYoy && yoyMap.isNotEmpty()) {
-            val rows = items.map { (b, cur, prev) ->
-                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
-                val sign = if ((deltaPct ?: 0.0) >= 0) "+" else ""
-                val trailing = if (deltaPct != null) {
-                    "去年 ${Fmt.moneyK(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
-                } else if (prev > 0) {
-                    "去年 ${Fmt.moneyK(prev)}"
-                } else null
-                HBarRow(
-                    name = b,
-                    segments = listOf(
-                        BarSegment("去年同期", prev),
-                        BarSegment("總收入", cur)
-                    ),
-                    trailing = trailing
-                )
-            }
-            return HBarData(rows, overlap = true)
-        } else {
-            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("總收入", it.second))) })
+    private fun branchIncomeYtdBar(f: Filters, opdColumn: String, ipdColumn: String, label: String): HBarData {
+        val anchorParts = mutableListOf<String>()
+        val anchorParams = mutableListOf<Any?>()
+        if (f.years.isNotEmpty()) {
+            anchorParts += "year IN (${f.years.joinToString(",") { "?" }})"
+            anchorParams.addAll(f.years)
         }
-    }
-
-    /** 各院區自費收入(累計，單位千元；重疊橫條含去年同期半透明比對)。 */
-    fun branchSelfPayIncomeYoyBar(f: Filters): HBarData {
-        val isBranchTotal = f.showHospitalTotal
-        val selDim = if (isBranchTotal) "'全院' AS branch_name" else "branch_name"
-        val grpDim = if (isBranchTotal) "" else "GROUP BY branch_name"
-        val (w, p) = whereFor(f, false, 0)
-        val whereClause = if (!isBranchTotal) "$w AND branch_name IS NOT NULL AND branch_name != ''" else w
-        val curRows = db.query(
-            "SELECT $selDim, (SUM(CAST(self_pay_income_opd AS REAL)) + SUM(CAST(self_pay_income_admission AS REAL))) / 1000.0 " +
-                "FROM ops_management_indicators WHERE $whereClause $grpDim", p)
-        val curMap = curRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
-
-        val yoyMap = if (f.showYoy) {
-            val (wy, py) = whereFor(f, false, -1)
-            val whereY = if (!isBranchTotal) "$wy AND branch_name IS NOT NULL AND branch_name != ''" else wy
-            val yRows = db.query(
-                "SELECT $selDim, (SUM(CAST(self_pay_income_opd AS REAL)) + SUM(CAST(self_pay_income_admission AS REAL))) / 1000.0 " +
-                    "FROM ops_management_indicators WHERE $whereY $grpDim", py)
-            yRows.associate { (it[0]?.toString() ?: "") to (num(it[1]) ?: 0.0) }
-        } else emptyMap()
-
-        val allBranches = (curMap.keys + yoyMap.keys).filter { it.isNotEmpty() }.distinct()
-        val items = allBranches.map { b ->
-            val cur = curMap[b] ?: 0.0
-            val prev = yoyMap[b] ?: 0.0
-            Triple(b, cur, prev)
-        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
-
-        if (f.showYoy && yoyMap.isNotEmpty()) {
-            val rows = items.map { (b, cur, prev) ->
-                val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
-                val sign = if ((deltaPct ?: 0.0) >= 0) "+" else ""
-                val trailing = if (deltaPct != null) {
-                    "去年 ${Fmt.moneyK(prev)} ($sign${String.format("%.1f%%", deltaPct)})"
-                } else if (prev > 0) {
-                    "去年 ${Fmt.moneyK(prev)}"
-                } else null
-                HBarRow(
-                    name = b,
-                    segments = listOf(
-                        BarSegment("去年同期", prev),
-                        BarSegment("自費收入", cur)
-                    ),
-                    trailing = trailing
-                )
-            }
-            return HBarData(rows, overlap = true)
-        } else {
-            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment("自費收入", it.second))) })
+        if (f.months.isNotEmpty()) {
+            anchorParts += "month IN (${f.months.joinToString(",") { "?" }})"
+            anchorParams.addAll(f.months)
         }
+        if (f.branches.isNotEmpty()) {
+            anchorParts += "branch_name IN (${f.branches.joinToString(",") { "?" }})"
+            anchorParams.addAll(f.branches)
+        }
+        val anchorWhere = if (anchorParts.isEmpty()) "1=1" else anchorParts.joinToString(" AND ")
+        val anchor = db.query(
+            "SELECT year, month FROM ops_management_indicators WHERE $anchorWhere " +
+                "ORDER BY CAST(year AS INTEGER) DESC, CAST(month AS INTEGER) DESC LIMIT 1",
+            anchorParams.toTypedArray()
+        ).firstOrNull() ?: return HBarData.EMPTY
+        val year = anchor[0]?.toString()?.toIntOrNull() ?: return HBarData.EMPTY
+        val month = anchor[1]?.toString()?.toIntOrNull() ?: return HBarData.EMPTY
+
+        val selectBranch = if (f.showHospitalTotal) "'全院'" else "branch_name"
+        val groupBranch = if (f.showHospitalTotal) "" else "GROUP BY branch_name"
+        val branchCondition = if (f.branches.isEmpty()) "" else
+            " AND branch_name IN (${f.branches.joinToString(",") { "?" }})"
+        val nonblank = if (f.showHospitalTotal) "" else " AND branch_name IS NOT NULL AND branch_name != ''"
+        val expression = "(COALESCE(SUM(CAST($opdColumn AS REAL)),0) + " +
+            "COALESCE(SUM(CAST($ipdColumn AS REAL)),0)) / 1000.0"
+        fun values(forYear: Int): Map<String, Double> {
+            val params = arrayOf<Any?>(forYear.toString(), month, *f.branches.toTypedArray())
+            return db.query(
+                "SELECT $selectBranch, $expression FROM ops_management_indicators " +
+                    "WHERE year=? AND CAST(month AS INTEGER) BETWEEN 1 AND ?$branchCondition$nonblank $groupBranch",
+                params
+            ).associate { (it[0]?.toString().orEmpty()) to (num(it[1]) ?: 0.0) }
+        }
+        val current = values(year)
+        val prior = if (f.showYoy) values(year - 1) else emptyMap()
+        val items = (current.keys + prior.keys).filter { it.isNotBlank() }.distinct().map { branch ->
+            Triple(branch, current[branch] ?: 0.0, prior[branch] ?: 0.0)
+        }.filter { it.second > 0 || it.third > 0 }.sortedByDescending { it.second }
+        if (!f.showYoy || prior.isEmpty()) {
+            return HBarData(items.map { HBarRow(it.first, listOf(BarSegment(label, it.second))) })
+        }
+        return HBarData(items.map { (branch, cur, prev) ->
+            val deltaPct = if (prev > 0) (cur - prev) / prev * 100.0 else null
+            val trailing = if (deltaPct != null)
+                "去年同期至${month}月 ${Fmt.moneyK(prev)} (${String.format("%+.1f%%", deltaPct)})"
+            else if (prev > 0) "去年同期至${month}月 ${Fmt.moneyK(prev)}" else null
+            HBarRow(branch, listOf(BarSegment("去年同期", prev), BarSegment(label, cur)), trailing)
+        }, overlap = true)
     }
     /** 院外門診部服務量趨勢。 */
     fun offsiteMonthly(f: Filters): LineChartData {
@@ -3868,6 +3845,10 @@ class DashboardRepo(private val db: HospitalDb) {
     fun occupancyColor(pct: Double): Long = Companion.occupancyColor(pct)
 
     companion object {
+        /** 全院 KPI 僅排除指定的兩個大類別，不套用其他病床圖表的擴大排除規則。 */
+        const val KPI_BED_EXCLUDE_MAJOR_SQL =
+            "(major_category IS NULL OR TRIM(major_category) NOT IN ('其他', '產後（小孩）', '產後(小孩)'))"
+
         /** 佔床率計算排除非急性病床大類別：排除「其他」與「產後（小孩）」(含全形/半形括號)。 */
         const val BED_OCC_EXCLUDE_MAJOR_SQL =
             "(major_category IS NULL OR (TRIM(major_category) != '其他' AND TRIM(major_category) NOT IN ('產後（小孩）', '產後(小孩)') AND TRIM(major_category) NOT LIKE '產後%'))"
