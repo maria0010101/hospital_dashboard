@@ -27,7 +27,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe
             )
             packageName = "HospitalDashboard"
-            packageVersion = "0.8.2"
+            packageVersion = "0.8.3"
             description = "Hospital Dashboard Desktop"
             copyright = "© 2026 Hospital Dashboard"
             windows {

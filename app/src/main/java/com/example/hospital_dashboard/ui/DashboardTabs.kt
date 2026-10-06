@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -399,36 +400,38 @@ private fun FirstVisitSheet(
     val note = if (years.isNotEmpty()) "篩選區間 民國${years.min()}-${years.max()}年 累計" else ""
 
     AdaptiveSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text("🩺 初診/複診 各院區明細",
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (note.isNotEmpty()) {
-                Text(note, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(6.dp))
-            stats?.forEach { s ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.weight(1f).adaptiveMarquee(), maxLines = 1)
-                    Text("初診 ${Fmt.int(s.firstVisit)}",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Spacer(Modifier.width(8.dp))
-                    Text("複診 ${Fmt.int(s.returnVisit)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline, maxLines = 1)
-                    Spacer(Modifier.width(8.dp))
-                    Text("初診率 ${String.format("%.1f%%", s.firstRate)}",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary, maxLines = 1)
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text("🩺 初診/複診 各院區明細",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (note.isNotEmpty()) {
+                    Text(note, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
                 }
+                Spacer(Modifier.height(6.dp))
+                stats?.forEach { s ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f).adaptiveMarquee(), maxLines = 1)
+                        Text("初診 ${Fmt.int(s.firstVisit)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("複診 ${Fmt.int(s.returnVisit)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("初診率 ${String.format("%.1f%%", s.firstRate)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -931,7 +934,8 @@ fun BedCategoryHeatCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        SelectionContainer {
+            Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     campusTitle,
@@ -1011,6 +1015,7 @@ fun BedCategoryHeatCard(
         }
     }
 }
+}
 
 /** 護理站佔床率明細底層彈窗（依佔床率由大到小排序） */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1034,12 +1039,13 @@ fun BedStationOccSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
-                .padding(horizontal = 16.dp)
-        ) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .padding(horizontal = 16.dp)
+            ) {
             Text(
                 "🛏️ $titleBranch · $category 護理站佔床率明細",
                 style = MaterialTheme.typography.titleMedium,
@@ -1121,6 +1127,7 @@ fun BedStationOccSheet(
         }
     }
 }
+}
 
 /** 院區差額病床實際佔床率熱力圖卡片 */
 @Composable
@@ -1138,7 +1145,8 @@ fun DiffBedCategoryHeatCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        SelectionContainer {
+            Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     campusTitle,
@@ -1218,6 +1226,7 @@ fun DiffBedCategoryHeatCard(
         }
     }
 }
+}
 
 /** 差額病床護理站佔床率明細底層彈窗（依佔床率由大到小排序） */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1241,12 +1250,13 @@ fun DiffBedStationOccSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
-                .padding(horizontal = 16.dp)
-        ) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .padding(horizontal = 16.dp)
+            ) {
             Text(
                 "🛏️ $titleBranch · $category 差額病床護理站佔床率明細",
                 style = MaterialTheme.typography.titleMedium,
@@ -1327,6 +1337,7 @@ fun DiffBedStationOccSheet(
             }
         }
     }
+}
 }
 
 @Composable

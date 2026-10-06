@@ -814,49 +814,11 @@ private fun LineTooltipCard(
  * 第 3 層：該院區該部別各科別詳細資訊 (Department)
  * 第 4 層：該院區該部別該科別各醫師服務量詳細資訊 (Doctor)
  */
-internal enum class DrillHierarchyType {
-    BRANCH_FIRST,   // 院區 -> 部別 -> 科別 [-> 醫師別]
-    DIVISION_FIRST  // 部別 -> 院區 -> 科別 -> 醫師別
-}
+typealias DrillHierarchyType = com.example.hospital_dashboard.data.DrillHierarchyType
+typealias UniversalDrillLevel = com.example.hospital_dashboard.data.UniversalDrillLevel
+typealias DrillMetricConfig = com.example.hospital_dashboard.data.DrillMetricConfig
 
-internal enum class UniversalDrillLevel {
-    LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4
-}
-
-internal data class DrillMetricConfig(
-    val titleMatch: String,
-    val metricType: String,
-    val unit: String,
-    val hierarchy: DrillHierarchyType = DrillHierarchyType.BRANCH_FIRST,
-    val maxLevels: Int = 4,
-    val yFormatter: ((Double) -> String)? = null,
-    val aliases: List<String> = emptyList()
-)
-
-private val DRILL_CONFIGS = listOf(
-    // DIVISION_FIRST 優先比對，避免「各部別」被「門診人次」或「住院人日」誤判為 BRANCH_FIRST
-    DrillMetricConfig("各部別門診人次趨勢", "OPD", "人次", DrillHierarchyType.DIVISION_FIRST, 4, aliases = listOf("各部別門診人次")),
-    DrillMetricConfig("住院人日月趨勢（依部別）", "IPD_DAYS", "人日", DrillHierarchyType.DIVISION_FIRST, 4, aliases = listOf("各部別住院人日")),
-    DrillMetricConfig("門診人次月趨勢（依院區）", "OPD", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區門診人次", "門診人次")),
-    DrillMetricConfig("急診人次月趨勢（依院區）", "ER", "人次", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區急診人次", "急診人次")),
-    DrillMetricConfig("初診人次月趨勢（依院區）", "FIRST_VISIT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區初診人次", "初診人次")),
-    DrillMetricConfig("住院人日月趨勢（依院區）", "IPD_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 4, aliases = listOf("各院區住院人日", "住院人日")),
-    DrillMetricConfig("住院人次月趨勢（依院區）", "IPD_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區住院人次", "住院人次")),
-    DrillMetricConfig("出院人日月趨勢（依院區）", "DIS_DAYS", "人日", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區出院人日", "出院人日")),
-    DrillMetricConfig("出院人次月趨勢（依院區）", "DIS_COUNT", "人次", DrillHierarchyType.BRANCH_FIRST, 3, aliases = listOf("各院區出院人次", "出院人次")),
-    DrillMetricConfig("總收入趨勢（依院區）", "INC_TOTAL", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money, aliases = listOf("各院區總收入", "總收入")),
-    DrillMetricConfig("自費收入趨勢（依院區）", "INC_SELF", "元", DrillHierarchyType.BRANCH_FIRST, 4, Fmt::money, aliases = listOf("各院區自費收入", "自費收入"))
-)
-
-internal fun getDrillMetricConfig(title: String): DrillMetricConfig? {
-    if (title.contains("累計")) return null
-    // 優先精確比對 titleMatch
-    DRILL_CONFIGS.firstOrNull { title == it.titleMatch || title.contains(it.titleMatch) }?.let { return it }
-    // 依 aliases 比對（支援單月橫條圖等標題）
-    return DRILL_CONFIGS.firstOrNull { cfg ->
-        cfg.aliases.any { alias -> title.contains(alias) }
-    }
-}
+internal fun getDrillMetricConfig(title: String): DrillMetricConfig? = com.example.hospital_dashboard.data.DrillConfigs.find(title)
 
 internal fun parseYmFromTitleOrFilters(title: String, filters: DashboardRepo.Filters): Pair<Int, Int> {
     val ymRegex = Regex("""(\d+)年(\d+)月""").find(title)

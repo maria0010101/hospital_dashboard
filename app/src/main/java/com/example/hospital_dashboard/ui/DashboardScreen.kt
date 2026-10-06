@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import com.example.hospital_dashboard.ui.adaptive.AdaptiveSheet
 import com.example.hospital_dashboard.ui.adaptive.AdaptiveTabs
+import androidx.compose.foundation.text.selection.SelectionContainer
 import com.example.hospital_dashboard.ui.adaptive.adaptiveMarquee
 import com.example.hospital_dashboard.ui.adaptive.currentAdaptiveSize
 import com.example.hospital_dashboard.ui.adaptive.isCompact
@@ -228,27 +229,29 @@ private fun KpiRow(vm: DashboardViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
-    val size = currentAdaptiveSize()
-    if (size.isCompact) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(defs) { d ->
-                KpiCard(d, modifier = Modifier.clickable { selectedMetric = d })
+    SelectionContainer {
+        val size = currentAdaptiveSize()
+        if (size.isCompact) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(defs) { d ->
+                    KpiCard(d, modifier = Modifier.clickable { selectedMetric = d })
+                }
             }
-        }
-    } else {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            val cols = (maxWidth / 160.dp).toInt().coerceIn(1, 5)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                defs.chunked(cols).forEach { rowDefs ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowDefs.forEach { d ->
-                            KpiCard(d, modifier = Modifier.weight(1f).clickable { selectedMetric = d })
-                        }
-                        repeat(cols - rowDefs.size) {
-                            Spacer(Modifier.weight(1f))
+        } else {
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                val cols = (maxWidth / 160.dp).toInt().coerceIn(1, 5)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    defs.chunked(cols).forEach { rowDefs ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowDefs.forEach { d ->
+                                KpiCard(d, modifier = Modifier.weight(1f).clickable { selectedMetric = d })
+                            }
+                            repeat(cols - rowDefs.size) {
+                                Spacer(Modifier.weight(1f))
+                            }
                         }
                     }
                 }
@@ -283,23 +286,25 @@ private fun BranchSummarySheet(
     val priorY = year.toIntOrNull()?.minus(1)?.toString() ?: year
 
     AdaptiveSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text(
-                "🏢 ${metric.title}｜${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "與去年同期 ${priorY}年${month}月 比較",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(Modifier.height(8.dp))
-            if (stats.isEmpty()) Text("此月份沒有可顯示的院區資料")
-            stats.forEach { s -> BranchKpiCard(s, metric) }
-            Spacer(Modifier.height(24.dp))
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    "🏢 ${metric.title}｜${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "與去年同期 ${priorY}年${month}月 比較",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                if (stats.isEmpty()) Text("此月份沒有可顯示的院區資料")
+                stats.forEach { s -> BranchKpiCard(s, metric) }
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
@@ -332,15 +337,17 @@ private fun BranchKpiCard(s: DashboardRepo.BranchKpiDetail, metric: KpiDef) {
 @Composable
 private fun BranchStatCard(s: DashboardRepo.BranchMonthStat) {
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(2.dp))
-            MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
-            MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
-            MetricLine("住院人次", s.ipdAdm, s.ipdAdmPrior, Fmt::compact)
-            MetricLine("住院人日", s.ipdDays, s.ipdDaysPrior, Fmt::compact)
-            MetricLine("平均佔床率", s.occ, s.occPrior, Fmt::percent, pp = true)
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(2.dp))
+                MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
+                MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
+                MetricLine("住院人次", s.ipdAdm, s.ipdAdmPrior, Fmt::compact)
+                MetricLine("住院人日", s.ipdDays, s.ipdDaysPrior, Fmt::compact)
+                MetricLine("平均佔床率", s.occ, s.occPrior, Fmt::percent, pp = true)
+            }
         }
     }
 }

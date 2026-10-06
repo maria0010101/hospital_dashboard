@@ -1,20 +1,20 @@
 # 醫院營運儀表板（Hospital Operations Dashboard）
 
-[![版本 0.8.2](https://img.shields.io/badge/version-0.8.2-blue)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.2)
-[![平台 Android｜Windows](https://img.shields.io/badge/platform-Android%20%7C%20Windows-green)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.2)
+[![版本 0.8.3](https://img.shields.io/badge/version-0.8.3-blue)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.3)
+[![平台 Android｜Windows](https://img.shields.io/badge/platform-Android%20%7C%20Windows-green)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.3)
 
 以本機 Excel 業務報表建立醫院營運儀表板，提供 **Android 手機／平板**與 **Windows 桌面版**。匯入後可離線瀏覽 KPI、趨勢、院區比較及多層明細；AI 分析是選用功能，是否需要網路取決於所選 AI 服務。兩平台共用工作表定義、資料查詢與指標計算，分別實作檔案讀取、資料庫及適合螢幕尺寸的介面。
 
 ## 下載與開始使用
 
-目前版本為 **0.8.2**，所有安裝檔均收錄於 [GitHub Release](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.2)。
+目前版本為 **0.8.3**，所有安裝檔均收錄於 [GitHub Release](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.3)。
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Android | [下載 APK](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.2/hospital_dashboard_v0.8.2.apk)（Android 7.0／API 24 起） |
-| Windows 安裝版 | [EXE](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.2/HospitalDashboard-0.8.2.exe) 或 [MSI](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.2/HospitalDashboard-0.8.2.msi) |
-| Windows 免安裝版 | [Portable ZIP](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.2/HospitalDashboard-windows-x64-portable.zip) |
-| 檔案校驗 | [SHA256SUMS.txt](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.2/SHA256SUMS.txt) |
+| Android | [下載 APK](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.3/hospital_dashboard_v0.8.3.apk)（Android 7.0／API 24 起） |
+| Windows 安裝版 | [EXE](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.3/HospitalDashboard-0.8.3.exe) 或 [MSI](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.3/HospitalDashboard-0.8.3.msi) |
+| Windows 免安裝版 | [Portable ZIP](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.3/HospitalDashboard-windows-x64-portable.zip) |
+| 檔案校驗 | [SHA256SUMS.txt](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.3/SHA256SUMS.txt) |
 
 1. 安裝應用程式；Windows 免安裝版請解壓縮 ZIP 後執行程式。
 2. 在程式內選取**符合本專案工作表結構**的本機 `.xlsx` 業務報表。程式會將資料匯入裝置上的 SQLite 資料庫，原始活頁簿不會因此被改寫。
@@ -78,6 +78,7 @@ Android Release APK 目前沿用專案既有的 debug keystore 簽章設定。Wi
 
 ## 版本摘要
 
+- **[0.8.3](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.3)**：放大圖表右上角新增匯出功能（匯出 JPEG 圖片、圖表分析模板 Markdown 文字報告、AI 混淆深度分析報告）；全院 KPI、圖表明細與多層展開資料全面支援滑鼠選取與長按文字複製。
 - **[0.8.2](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.2)**：11 項 KPI、加權總佔床率及同月累計比較、收入同比區間修正、深色放大圖表文字修正。
 - **[0.8.1](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.1)**：平板／桌面版面調整、逐項 KPI 院區明細、AI 服務與混淆還原流程。
 - **[v0.8.0](https://github.com/maria0010101/hospital_dashboard/releases/tag/v0.8.0)**：門急診疫苗人次排除與對應資料匯入。
