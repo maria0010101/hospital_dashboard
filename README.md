@@ -1,20 +1,20 @@
 # 醫院營運儀表板（Hospital Operations Dashboard）
 
-[![版本 0.8.4](https://img.shields.io/badge/version-0.8.4-blue)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.4)
-[![平台 Android｜Windows](https://img.shields.io/badge/platform-Android%20%7C%20Windows-green)](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.4)
+[![版本 0.8.4](https://img.shields.io/badge/version-0.8.4-blue)](https://github.com/maria0010101/hospital_dashboard/releases/tag/v0.8.4)
+[![平台 Android｜Windows](https://img.shields.io/badge/platform-Android%20%7C%20Windows-green)](https://github.com/maria0010101/hospital_dashboard/releases/tag/v0.8.4)
 
 以本機 Excel 業務報表建立醫院營運儀表板，提供 **Android 手機／平板**與 **Windows 桌面版**。匯入後可離線瀏覽 KPI、趨勢、院區比較及多層明細；AI 分析是選用功能，是否需要網路取決於所選 AI 服務。兩平台共用工作表定義、資料查詢與指標計算，分別實作檔案讀取、資料庫及適合螢幕尺寸的介面。
 
 ## 下載與開始使用
 
-目前版本為 **0.8.4**，所有安裝檔均收錄於 [GitHub Release](https://github.com/maria0010101/hospital_dashboard/releases/tag/0.8.4)。
+目前版本為 **0.8.4**，所有安裝檔均收錄於 [GitHub Release](https://github.com/maria0010101/hospital_dashboard/releases/tag/v0.8.4)。
 
 | 平台 | 安裝檔 |
 | --- | --- |
-| Android | [下載 APK](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.4/hospital_dashboard_v0.8.4.apk)（Android 7.0／API 24 起） |
-| Windows 安裝版 | [EXE](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.4/HospitalDashboard-0.8.4.exe) 或 [MSI](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.4/HospitalDashboard-0.8.4.msi) |
-| Windows 免安裝版 | [Portable ZIP](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.4/HospitalDashboard-windows-x64-portable.zip) |
-| 檔案校驗 | [SHA256SUMS.txt](https://github.com/maria0010101/hospital_dashboard/releases/download/0.8.4/SHA256SUMS.txt) |
+| Android | [下載 APK](https://github.com/maria0010101/hospital_dashboard/releases/download/v0.8.4/hospital_dashboard_v0.8.4.apk)（Android 7.0／API 24 起） |
+| Windows 安裝版 | [EXE](https://github.com/maria0010101/hospital_dashboard/releases/download/v0.8.4/HospitalDashboard-0.8.4.exe) 或 [MSI](https://github.com/maria0010101/hospital_dashboard/releases/download/v0.8.4/HospitalDashboard-0.8.4.msi) |
+| Windows 免安裝版 | [Portable ZIP](https://github.com/maria0010101/hospital_dashboard/releases/download/v0.8.4/HospitalDashboard-windows-x64-portable.zip) |
+| 檔案校驗 | [SHA256SUMS.txt](https://github.com/maria0010101/hospital_dashboard/releases/download/v0.8.4/SHA256SUMS.txt) |
 
 1. 安裝應用程式；Windows 免安裝版請解壓縮 ZIP 後執行程式。
 2. 在程式內選取**符合本專案工作表結構**的本機 `.xlsx` 業務報表。程式會將資料匯入裝置上的 SQLite 資料庫，原始活頁簿不會因此被改寫。
