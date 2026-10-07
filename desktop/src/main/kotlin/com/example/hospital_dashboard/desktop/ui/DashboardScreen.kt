@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -192,13 +193,15 @@ private fun KpiRow(vm: DesktopViewModel) {
             Spacer(Modifier.height(6.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val columns = (maxWidth / 170.dp).toInt().coerceIn(1, 5)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    defs.chunked(columns).forEach { group ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            group.forEach { d ->
-                                KpiCard(d, Modifier.weight(1f).clickable { selectedMetric = d })
+                SelectionContainer {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        defs.chunked(columns).forEach { group ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                group.forEach { d ->
+                                    KpiCard(d, Modifier.weight(1f).clickable { selectedMetric = d })
+                                }
+                                repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
                             }
-                            repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -231,23 +234,25 @@ private fun BranchSummarySheet(
     val priorY = year.toIntOrNull()?.minus(1)?.toString() ?: year
 
     AdaptiveSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text(
-                "🏢 ${metric.title}｜${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "與去年同期 ${priorY}年${month}月 比較",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(Modifier.height(8.dp))
-            if (stats.isEmpty()) Text("此月份沒有可顯示的院區資料")
-            stats.forEach { s -> BranchKpiCard(s, metric) }
-            Spacer(Modifier.height(24.dp))
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    "🏢 ${metric.title}｜${year}年${month.toIntOrNull()?.toString()?.padStart(2, '0') ?: month}月 各院區明細",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "與去年同期 ${priorY}年${month}月 比較",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                if (stats.isEmpty()) Text("此月份沒有可顯示的院區資料")
+                stats.forEach { s -> BranchKpiCard(s, metric) }
+                Spacer(Modifier.height(24.dp))
+            }
         }
     }
 }
@@ -255,24 +260,26 @@ private fun BranchSummarySheet(
 @Composable
 private fun BranchKpiCard(s: DashboardRepo.BranchKpiDetail, metric: KpiDef) {
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("🏢 ${s.branch}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            val pp = metric.title.contains("佔床率")
-            val fmt = if (pp) Fmt::percent else Fmt::int
-            val unit = if (metric.title.contains("收入")) " 元" else ""
-            fun display(value: Double?): String = value?.let { fmt(it) + unit } ?: "—"
-            Text("本月數據：${display(s.value)}", style = MaterialTheme.typography.bodyMedium)
-            val change = s.prior?.let { if (pp) s.value - it else if (it != 0.0) (s.value - it) / it * 100 else null }
-            Text("去年同期：${display(s.prior)}  ${change?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("近三個月：${s.trend3.joinToString(" → ") { display(it) }}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("今年度累計至當月：${display(s.ytd)}", style = MaterialTheme.typography.bodyMedium)
-            val ytdChange = s.priorYtd?.let { prior ->
-                s.ytd?.let { current -> if (pp) current - prior else if (prior != 0.0) (current - prior) / prior * 100 else null }
+        SelectionContainer {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("🏢 ${s.branch}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                val pp = metric.title.contains("佔床率")
+                val fmt = if (pp) Fmt::percent else Fmt::int
+                val unit = if (metric.title.contains("收入")) " 元" else ""
+                fun display(value: Double?): String = value?.let { fmt(it) + unit } ?: "—"
+                Text("本月數據：${display(s.value)}", style = MaterialTheme.typography.bodyMedium)
+                val change = s.prior?.let { if (pp) s.value - it else if (it != 0.0) (s.value - it) / it * 100 else null }
+                Text("去年同期：${display(s.prior)}  ${change?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("近三個月：${s.trend3.joinToString(" → ") { display(it) }}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("今年度累計至當月：${display(s.ytd)}", style = MaterialTheme.typography.bodyMedium)
+                val ytdChange = s.priorYtd?.let { prior ->
+                    s.ytd?.let { current -> if (pp) current - prior else if (prior != 0.0) (current - prior) / prior * 100 else null }
+                }
+                Text("去年同期累計至當月：${display(s.priorYtd)}  ${ytdChange?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("去年同期累計至當月：${display(s.priorYtd)}  ${ytdChange?.let { String.format(if (pp) "%+.1fpp" else "%+.1f%%", it) } ?: "—"}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -280,14 +287,16 @@ private fun BranchKpiCard(s: DashboardRepo.BranchKpiDetail, metric: KpiDef) {
 @Composable
 private fun BranchStatCard(s: DashboardRepo.BranchMonthStat) {
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(2.dp))
-            MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
-            MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
-            MetricLine("住院人次", s.ipdAdm, s.ipdAdmPrior, Fmt::compact)
-            MetricLine("住院人日", s.ipdDays, s.ipdDaysPrior, Fmt::compact)
-            MetricLine("平均佔床率", s.occ, s.occPrior, Fmt::percent, pp = true)
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Text("🏢 ${s.branch}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(2.dp))
+                MetricLine("門診人次", s.opd, s.opdPrior, Fmt::int)
+                MetricLine("急診人次", s.er, s.erPrior, Fmt::compact)
+                MetricLine("住院人次", s.ipdAdm, s.ipdAdmPrior, Fmt::compact)
+                MetricLine("住院人日", s.ipdDays, s.ipdDaysPrior, Fmt::compact)
+                MetricLine("平均佔床率", s.occ, s.occPrior, Fmt::percent, pp = true)
+            }
         }
     }
 }

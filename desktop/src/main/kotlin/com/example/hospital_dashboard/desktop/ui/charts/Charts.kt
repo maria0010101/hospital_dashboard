@@ -33,7 +33,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -229,10 +232,14 @@ fun EmptyHint(text: String = "📭 無資料") {
 fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
 
+    var showExportMenu by remember { mutableStateOf(false) }
+    var showTextReportDialog by remember { mutableStateOf(false) }
+    var showAiReportDialog by remember { mutableStateOf(false) }
+    val graphicsLayer = rememberGraphicsLayer()
+
     // 標題列在上、圖表在下：兩者完全不重疊，避免手勢偵測干擾關閉按鈕
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // 整條標題列皆可點擊關閉(含 ✕ 按鈕)
-        // statusBarsPadding：橫向時狀態列會蓋住頂部 0~104px，需將標題列下推避免點擊被攔截
+        // statusBarsPadding：狀態列
         // zIndex：圖表放大時 graphicsLayer 會擴大觸控範圍，需確保標題列優先接收點擊
         Row(
             Modifier
@@ -240,8 +247,7 @@ fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> 
                 .zIndex(1f)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .statusBarsPadding()
-                .clickable(onClick = onClose)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -252,12 +258,39 @@ fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> 
                 modifier = Modifier.weight(1f),
                 maxLines = 1
             )
-            Text(
-                "✕ 關閉",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
-            )
+            // 匯出按鈕
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable { showExportMenu = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "📤 匯出",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            // 關閉按鈕
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(onClick = onClose)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "✕ 關閉",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         // 圖表區域(依可用高度填滿)
@@ -270,6 +303,12 @@ fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> 
                 .fillMaxWidth()
                 .weight(1f)
                 .clipToBounds() // 縮放時限制於圖表區，避免蓋住標題列
+                .drawWithContent {
+                    graphicsLayer.record {
+                        this@drawWithContent.drawContent()
+                    }
+                    drawLayer(graphicsLayer)
+                }
                 .onSizeChanged { heightPx = it.height }
         ) {
             var pointInfo by remember(content) { mutableStateOf<PointInfo?>(null) }
@@ -595,6 +634,32 @@ fun ZoomChartScreen(vm: DesktopViewModel, content: ChartContent, onClose: () -> 
             textAlign = TextAlign.Center
         )
     }
+
+    if (showExportMenu) {
+        ChartExportMenuDialog(
+            graphicsLayer = graphicsLayer,
+            content = content,
+            onDismiss = { showExportMenu = false },
+            onOpenTextReport = { showTextReportDialog = true },
+            onOpenAiReport = { showAiReportDialog = true }
+        )
+    }
+
+    if (showTextReportDialog) {
+        ChartTextReportDialog(
+            vm = vm,
+            content = content,
+            onDismiss = { showTextReportDialog = false }
+        )
+    }
+
+    if (showAiReportDialog) {
+        ChartAiReportDialog(
+            vm = vm,
+            content = content,
+            onDismiss = { showAiReportDialog = false }
+        )
+    }
 }
 
 /** X 軸視窗縮放容器：縮放/拖曳對應到 x 索引區段並重繪(縮放後可顯示更多 X 軸標籤)。 */
@@ -684,19 +749,21 @@ private fun ZoomableBox(content: @Composable () -> Unit) {
 @Composable
 private fun TableZoom(data: TableData, onRowClick: ((Int) -> Unit)? = null) {
     val size = currentAdaptiveSize()
-    Column(
-        Modifier
-            .fillMaxSize()
-            .padding(top = 44.dp, bottom = 40.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        if (size.isCompact) {
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                DataTable(data, Modifier.width(960.dp), onRowClick)
-            }
-        } else {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                DataTable(data, Modifier.fillMaxWidth(), onRowClick)
+    SelectionContainer {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = 44.dp, bottom = 40.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            if (size.isCompact) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                    DataTable(data, Modifier.width(960.dp), onRowClick)
+                }
+            } else {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    DataTable(data, Modifier.fillMaxWidth(), onRowClick)
+                }
             }
         }
     }
@@ -713,17 +780,17 @@ private fun LineTooltipCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss), // 點工具卡任意處即關閉
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 240.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "📅 ${info.xLabel}",
@@ -805,6 +872,7 @@ private fun LineTooltipCard(
             }
         }
     }
+}
 }
 
 /**
@@ -906,11 +974,12 @@ private fun UniversalDrillDownCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = maxHeight)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = maxHeight)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
             // 頂部導航列：返回按鈕 + 麵包屑導航 + 關閉按鈕
             Row(
                 Modifier.fillMaxWidth(),
@@ -1448,6 +1517,7 @@ private fun UniversalDrillDownCard(
         }
     }
 }
+}
 
 /** 通用多維度下鑽統計項目卡片（支援寬螢幕中間欄位呈現近三個月趨勢） */
 @Composable
@@ -1726,39 +1796,40 @@ private fun DeptOpdCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 320.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏥 $dept 各院區明細",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("✕", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            stats.forEach { s ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    DeptMetricLine("門診人次", s.opd, s.opdPrior, Fmt::compact, pct = true)
-                    DeptMetricLine("總診次", s.sessions, s.sessionsPrior, Fmt::compact, pct = true)
-                    Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact)
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏥 $dept 各院區明細",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("✕", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        DeptMetricLine("門診人次", s.opd, s.opdPrior, Fmt::compact, pct = true)
+                        DeptMetricLine("總診次", s.sessions, s.sessionsPrior, Fmt::compact, pct = true)
+                        Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact)
+                    }
                 }
             }
         }
@@ -1784,61 +1855,62 @@ private fun BranchDeptCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 320.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏢 $branch 各科別門診人次",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("✕", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            stats.forEach { s ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(s.dept, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                        Text(Fmt.compact(s.opd), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        val opdPrior = s.opdPrior
-                        if (opdPrior != null) {
-                            Text("去年 ${Fmt.compact(opdPrior)}", style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline)
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏢 $branch 各科別門診人次",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("✕", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.dept, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                            Text(Fmt.compact(s.opd), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.width(8.dp))
-                            if (opdPrior != 0.0) {
-                                val d = (s.opd - opdPrior) / opdPrior * 100.0
-                                val up = d >= 0
-                                Text(
-                                    (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (up) positiveTextColor() else negativeTextColor()
-                                )
+                            val opdPrior = s.opdPrior
+                            if (opdPrior != null) {
+                                Text("去年 ${Fmt.compact(opdPrior)}", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(8.dp))
+                                if (opdPrior != 0.0) {
+                                    val d = (s.opd - opdPrior) / opdPrior * 100.0
+                                    val up = d >= 0
+                                    Text(
+                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (up) positiveTextColor() else negativeTextColor()
+                                    )
+                                } else {
+                                    Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                }
                             } else {
                                 Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                             }
-                        } else {
-                            Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                         }
+                        Recent3Line(recent3[s.dept] ?: emptyList(), Fmt::compact)
                     }
-                    Recent3Line(recent3[s.dept] ?: emptyList(), Fmt::compact)
                 }
             }
         }
@@ -1861,58 +1933,59 @@ private fun DivDeptCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 340.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏥 $div 各科別門診人次明細",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("✕", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            if (stats.isEmpty()) {
-                Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            } else {
-                stats.forEach { s ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("門診 ${Fmt.int(s.opd)}", style = MaterialTheme.typography.labelMedium)
-                            Spacer(Modifier.width(8.dp))
-                            Text("診次 ${Fmt.int(s.sessions)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Spacer(Modifier.width(6.dp))
-                            Text("平均每診 ${String.format("%.1f", s.avgPerSession)}人", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        val opdPrior = s.opdPrior
-                        if (opdPrior != null && opdPrior > 0) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                val d = s.deltaPct ?: 0.0
-                                val sign = if (d >= 0) "+" else ""
-                                val up = d >= 0
-                                Text("去年同期 ${Fmt.compact(opdPrior)} ($sign${String.format("%.1f%%", d)})",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) positiveTextColor() else negativeTextColor())
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏥 $div 各科別門診人次明細",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("✕", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                if (stats.isEmpty()) {
+                    Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                } else {
+                    stats.forEach { s ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("門診 ${Fmt.int(s.opd)}", style = MaterialTheme.typography.labelMedium)
+                                Spacer(Modifier.width(8.dp))
+                                Text("診次 ${Fmt.int(s.sessions)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(6.dp))
+                                Text("平均每診 ${String.format("%.1f", s.avgPerSession)}人", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
+                            val opdPrior = s.opdPrior
+                            if (opdPrior != null && opdPrior > 0) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    val d = s.deltaPct ?: 0.0
+                                    val sign = if (d >= 0) "+" else ""
+                                    val up = d >= 0
+                                    Text("去年同期 ${Fmt.compact(opdPrior)} ($sign${String.format("%.1f%%", d)})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (up) positiveTextColor() else negativeTextColor())
+                                }
+                            }
+                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         }
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }
@@ -1936,58 +2009,59 @@ private fun IpdDivDeptCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 340.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏥 $div 各科別住院明細",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("✕", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            if (stats.isEmpty()) {
-                Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            } else {
-                stats.forEach { s ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("人日 ${Fmt.int(s.days)}", style = MaterialTheme.typography.labelMedium)
-                            Spacer(Modifier.width(8.dp))
-                            Text("人次 ${Fmt.int(s.adm)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Spacer(Modifier.width(6.dp))
-                            Text("平均 ${String.format("%.1f日", s.los)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        val daysPrior = s.daysPrior
-                        if (daysPrior != null && daysPrior > 0) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                val d = s.deltaPct ?: 0.0
-                                val sign = if (d >= 0) "+" else ""
-                                val up = d >= 0
-                                Text("人日去年同期 ${Fmt.compact(daysPrior)} ($sign${String.format("%.1f%%", d)})",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) positiveTextColor() else negativeTextColor())
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏥 $div 各科別住院明細",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("✕", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                if (stats.isEmpty()) {
+                    Text("📭 無資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                } else {
+                    stats.forEach { s ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(s.dept, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("人日 ${Fmt.int(s.days)}", style = MaterialTheme.typography.labelMedium)
+                                Spacer(Modifier.width(8.dp))
+                                Text("人次 ${Fmt.int(s.adm)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(6.dp))
+                                Text("平均 ${String.format("%.1f日", s.los)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
+                            val daysPrior = s.daysPrior
+                            if (daysPrior != null && daysPrior > 0) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    val d = s.deltaPct ?: 0.0
+                                    val sign = if (d >= 0) "+" else ""
+                                    val up = d >= 0
+                                    Text("人日去年同期 ${Fmt.compact(daysPrior)} ($sign${String.format("%.1f%%", d)})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (up) positiveTextColor() else negativeTextColor())
+                                }
+                            }
+                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         }
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }
@@ -2011,58 +2085,59 @@ private fun OffsiteBranchCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 340.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏥 $branch 各院外門診部明細",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text("✕", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            if (stats.isEmpty()) {
-                Text("📭 無院外門診部資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            } else {
-                stats.forEach { s ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(s.clinicName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("合計 ${Fmt.int(s.total)}", style = MaterialTheme.typography.labelMedium)
-                            Spacer(Modifier.width(8.dp))
-                            Text("醫療 ${Fmt.int(s.medical)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Spacer(Modifier.width(6.dp))
-                            Text("保健 ${Fmt.int(s.health)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        val totalPrior = s.totalPrior
-                        if (totalPrior != null && totalPrior > 0) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                val d = s.deltaPct ?: 0.0
-                                val sign = if (d >= 0) "+" else ""
-                                val up = d >= 0
-                                Text("去年同期 ${Fmt.compact(totalPrior)} ($sign${String.format("%.1f%%", d)})",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (up) positiveTextColor() else negativeTextColor())
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 340.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏥 $branch 各院外門診部明細",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("✕", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp))
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                if (stats.isEmpty()) {
+                    Text("📭 無院外門診部資料", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                } else {
+                    stats.forEach { s ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(s.clinicName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("合計 ${Fmt.int(s.total)}", style = MaterialTheme.typography.labelMedium)
+                                Spacer(Modifier.width(8.dp))
+                                Text("醫療 ${Fmt.int(s.medical)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(6.dp))
+                                Text("保健 ${Fmt.int(s.health)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
+                            val totalPrior = s.totalPrior
+                            if (totalPrior != null && totalPrior > 0) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    val d = s.deltaPct ?: 0.0
+                                    val sign = if (d >= 0) "+" else ""
+                                    val up = d >= 0
+                                    Text("去年同期 ${Fmt.compact(totalPrior)} ($sign${String.format("%.1f%%", d)})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (up) positiveTextColor() else negativeTextColor())
+                                }
+                            }
+                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                         }
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
             }
@@ -2089,54 +2164,56 @@ private fun BedBranchCard(
             .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🛏️ $branch 實際佔床率（近三個月與去年同期）",
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
-            }
-            val d = data
-            if (d == null || d.first.isEmpty()) {
-                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            } else {
-                d.first.forEachIndexed { i, t ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(t.label, style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.weight(1f))
-                        Text("實開 ${Fmt.int(t.openBeds)} 床", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline)
-                        Spacer(Modifier.width(8.dp))
-                        Text(Fmt.percent(t.actOcc), style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold)
-                    }
-                    if (i == 0) {
-                        // 最新月與去年同期比較
-                        val prior = d.second
-                        if (prior != null) {
-                            val delta = t.actOcc - prior
-                            val up = delta >= 0
-                            Row(
-                                Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("去年同期 ${Fmt.percent(prior)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    (if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (up) positiveTextColor() else negativeTextColor()
-                                )
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🛏️ $branch 實際佔床率（近三個月與去年同期）",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+                }
+                val d = data
+                if (d == null || d.first.isEmpty()) {
+                    Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                } else {
+                    d.first.forEachIndexed { i, t ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(t.label, style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.weight(1f))
+                            Text("實開 ${Fmt.int(t.openBeds)} 床", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline)
+                            Spacer(Modifier.width(8.dp))
+                            Text(Fmt.percent(t.actOcc), style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold)
+                        }
+                        if (i == 0) {
+                            // 最新月與去年同期比較
+                            val prior = d.second
+                            if (prior != null) {
+                                val delta = t.actOcc - prior
+                                val up = delta >= 0
+                                Row(
+                                    Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("去年同期 ${Fmt.percent(prior)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        (if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (up) positiveTextColor() else negativeTextColor()
+                                    )
+                                }
                             }
                         }
                     }
@@ -2165,49 +2242,51 @@ private fun BedCategoryCard(
             .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("🛏️ 病床類別「$category」各院區實際佔床率",
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                    maxLines = 1, modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
-            }
-            val r = rows
-            if (r == null || r.isEmpty()) {
-                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            } else {
-                Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 320.dp)) {
-                    r.forEach { row ->
-                        Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold)
-                        val anchor = row.trend.lastOrNull()
-                        if (anchor != null) {
-                            Row(Modifier.fillMaxWidth().padding(start = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text("近三個月 ", style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline)
-                                Text(
-                                    row.trend.joinToString(" → ") { Fmt.percent(it.actOcc) },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline)
-                                Spacer(Modifier.weight(1f))
-                                Text(Fmt.percent(anchor.actOcc),
-                                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            }
-                            val prior = row.prior
-                            if (prior != null) {
-                                val delta = anchor.actOcc - prior
-                                val up = delta >= 0
-                                Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("🛏️ 病床類別「$category」各院區實際佔床率",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                        maxLines = 1, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+                }
+                val r = rows
+                if (r == null || r.isEmpty()) {
+                    Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 320.dp)) {
+                        r.forEach { row ->
+                            Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold)
+                            val anchor = row.trend.lastOrNull()
+                            if (anchor != null) {
+                                Row(Modifier.fillMaxWidth().padding(start = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically) {
-                                    Text("去年同期 ${Fmt.percent(prior)}",
+                                    Text("近三個月 ", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline)
+                                    Text(
+                                        row.trend.joinToString(" → ") { Fmt.percent(it.actOcc) },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.outline)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text((if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
-                                        style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                                        color = if (up) positiveTextColor() else negativeTextColor())
+                                    Spacer(Modifier.weight(1f))
+                                    Text(Fmt.percent(anchor.actOcc),
+                                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                }
+                                val prior = row.prior
+                                if (prior != null) {
+                                    val delta = anchor.actOcc - prior
+                                    val up = delta >= 0
+                                    Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically) {
+                                        Text("去年同期 ${Fmt.percent(prior)}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text((if (up) "▲ " else "▼ ") + String.format("%+.1fpp", delta),
+                                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                                            color = if (up) positiveTextColor() else negativeTextColor())
+                                    }
                                 }
                             }
                         }
@@ -2246,57 +2325,59 @@ private fun MetricOverlayCard(
             .padding(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("${def.sheetTitle}${if (label.isNotEmpty()) "（$label）" else ""}",
-                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismiss) { Text("✕ 關閉") }
-            }
-            val r = rows
-            if (r == null) {
-                Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            } else {
-                Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
-                    r.forEachIndexed { i, row ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        }
-                        row.metricNames.forEachIndexed { mi, name ->
-                            val v = row.cur.getOrElse(mi) { 0.0 }
-                            val p = row.prior.getOrElse(mi) { null }
-                            val tr = row.trend3.getOrElse(mi) { emptyList() }
+        SelectionContainer {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${def.sheetTitle}${if (label.isNotEmpty()) "（$label）" else ""}",
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("✕ 關閉") }
+                }
+                val r = rows
+                if (r == null) {
+                    Text("📭 無資料", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
+                        r.forEachIndexed { i, row ->
                             Row(
-                                Modifier.fillMaxWidth().padding(start = 8.dp, top = 1.dp),
+                                Modifier.fillMaxWidth().padding(top = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(name, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f))
-                                if (p != null && p != 0.0 && v != 0.0) {
-                                    val d = (v - p) / p * 100.0
-                                    val up = d >= 0
-                                    Text((if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (up) positiveTextColor() else negativeTextColor())
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("去年 ${def.fmt(p)}", style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.outline)
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                Text(def.fmt(v), style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold)
+                                Text("🏢 ${row.branch}", style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                             }
-                            Recent3Line(tr, def.fmt, prefix = name)
+                            row.metricNames.forEachIndexed { mi, name ->
+                                val v = row.cur.getOrElse(mi) { 0.0 }
+                                val p = row.prior.getOrElse(mi) { null }
+                                val tr = row.trend3.getOrElse(mi) { emptyList() }
+                                Row(
+                                    Modifier.fillMaxWidth().padding(start = 8.dp, top = 1.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(name, style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f))
+                                    if (p != null && p != 0.0 && v != 0.0) {
+                                        val d = (v - p) / p * 100.0
+                                        val up = d >= 0
+                                        Text((if (up) "▲ " else "▼ ") + String.format("%+.1f%%", d),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (up) positiveTextColor() else negativeTextColor())
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("去年 ${def.fmt(p)}", style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline)
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text(def.fmt(v), style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold)
+                                }
+                                Recent3Line(tr, def.fmt, prefix = name)
+                            }
+                            if (i < r.size - 1) HorizontalDivider(Modifier.padding(vertical = 4.dp))
                         }
-                        if (i < r.size - 1) HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     }
                 }
             }
@@ -2373,48 +2454,49 @@ private fun DeptBranchCard(
     Card(
         modifier
             .fillMaxWidth(0.94f)
-            .padding(10.dp)
-            .clickable(onClick = onDismiss),
+            .padding(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
-        Column(
-            Modifier
-                .heightIn(max = 320.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "🏥 $dept 各院區明細",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    "✕",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.outline,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp)
-                )
-            }
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(4.dp))
-            stats.forEach { s ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    DeptMetricLine("住院人次", s.adm, s.admPrior, Fmt::compact, pct = true)
-                    DeptMetricLine("住院人日", s.days, s.daysPrior, Fmt::compact, pct = true)
-                    DeptMetricLine(
-                        "平均住院日", s.los, s.losPrior,
-                        { String.format("%.1f天", it) },
-                        pct = false
+        SelectionContainer {
+            Column(
+                Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "🏥 $dept 各院區明細",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
-                    Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact, prefix = "近三月住院人次")
+                    Text(
+                        "✕",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDismiss).padding(4.dp)
+                    )
+                }
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(4.dp))
+                stats.forEach { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        DeptMetricLine("住院人次", s.adm, s.admPrior, Fmt::compact, pct = true)
+                        DeptMetricLine("住院人日", s.days, s.daysPrior, Fmt::compact, pct = true)
+                        DeptMetricLine(
+                            "平均住院日", s.los, s.losPrior,
+                            { String.format("%.1f天", it) },
+                            pct = false
+                        )
+                        Recent3Line(recent3[s.branch] ?: emptyList(), Fmt::compact, prefix = "近三月住院人次")
+                    }
                 }
             }
         }
@@ -2529,74 +2611,76 @@ fun PhysDeptSheet(vm: DesktopViewModel, dept: String, onDismiss: () -> Unit) {
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text("🩺 $dept 醫師服務量明細",
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            val note = periodNoteOf(vm)
-            if (note.isNotEmpty()) {
-                Text(note, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(8.dp))
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text("🩺 $dept 醫師服務量明細",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val note = periodNoteOf(vm)
+                if (note.isNotEmpty()) {
+                    Text(note, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(8.dp))
 
-            // 近三個月增減趨勢
-            Text("📈 近三個月增減趨勢", style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            if (trend.isNotEmpty()) {
-                TrendMetricRow("門診人次", trend.map { it.opd }, Fmt::compact)
-                TrendMetricRow("急診人次", trend.map { it.er }, Fmt::compact)
-                TrendMetricRow("住院人次", trend.map { it.adm }, Fmt::compact)
-                TrendMetricRow("住院人日", trend.map { it.days }, Fmt::compact)
-            } else {
-                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            }
+                // 近三個月增減趨勢
+                Text("📈 近三個月增減趨勢", style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (trend.isNotEmpty()) {
+                    TrendMetricRow("門診人次", trend.map { it.opd }, Fmt::compact)
+                    TrendMetricRow("急診人次", trend.map { it.er }, Fmt::compact)
+                    TrendMetricRow("住院人次", trend.map { it.adm }, Fmt::compact)
+                    TrendMetricRow("住院人日", trend.map { it.days }, Fmt::compact)
+                } else {
+                    Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
 
-            Spacer(Modifier.height(8.dp))
-            // 去年同期成長率
-            val cur = yoy.first
-            val prior = yoy.second
-            val anchorLabel = anchor?.let { "${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: "本月"
-            Text("📊 去年同期成長率（$anchorLabel vs 去年同月）",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            if (cur != null) {
-                YoyMetricLine("門診人次", cur.opd, prior?.opd, Fmt::compact)
-                YoyMetricLine("急診人次", cur.er, prior?.er, Fmt::compact)
-                YoyMetricLine("住院人次", cur.adm, prior?.adm, Fmt::compact)
-                YoyMetricLine("住院人日", cur.days, prior?.days, Fmt::compact)
-            } else {
-                Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            }
+                Spacer(Modifier.height(8.dp))
+                // 去年同期成長率
+                val cur = yoy.first
+                val prior = yoy.second
+                val anchorLabel = anchor?.let { "${it.first}年${it.second.toString().padStart(2, '0')}月" } ?: "本月"
+                Text("📊 去年同期成長率（$anchorLabel vs 去年同月）",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (cur != null) {
+                    YoyMetricLine("門診人次", cur.opd, prior?.opd, Fmt::compact)
+                    YoyMetricLine("急診人次", cur.er, prior?.er, Fmt::compact)
+                    YoyMetricLine("住院人次", cur.adm, prior?.adm, Fmt::compact)
+                    YoyMetricLine("住院人日", cur.days, prior?.days, Fmt::compact)
+                } else {
+                    Text("—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
 
-            Spacer(Modifier.height(8.dp))
-            // 醫師服務量
-            Text("👨‍⚕️ 醫師服務量（依門診人次排序）", style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            if (doctors.isEmpty()) {
-                Text("此科別於篩選區間無醫師服務資料", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            doctors.forEach { d ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(d.doctorName, style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
-                            Text("門診 ${Fmt.int(d.opd)}", style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                // 醫師服務量
+                Text("👨‍⚕️ 醫師服務量（依門診人次排序）", style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                if (doctors.isEmpty()) {
+                    Text("此科別於篩選區間無醫師服務資料", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                doctors.forEach { d ->
+                    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(d.doctorName, style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                                Text("門診 ${Fmt.int(d.opd)}", style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(
+                                "診次 ${Fmt.int(d.sessions)} ｜ 急診 ${Fmt.int(d.er)} ｜ " +
+                                    "住院人次 ${Fmt.int(d.adm)} ｜ 住院人日 ${Fmt.int(d.days)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Text(
-                            "診次 ${Fmt.int(d.sessions)} ｜ 急診 ${Fmt.int(d.er)} ｜ " +
-                                "住院人次 ${Fmt.int(d.adm)} ｜ 住院人日 ${Fmt.int(d.days)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -2611,46 +2695,48 @@ fun IncomeDetailSheet(vm: DesktopViewModel, ym: Int, onDismiss: () -> Unit) {
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text("💰 ${ym / 100}年${(ym % 100).toString().padStart(2, '0')}月 各院區收入明細",
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("近三個月趨勢 ｜ 與去年同期比較", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline)
-            Spacer(Modifier.height(8.dp))
-            stats.forEach { s ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text("本月 ${Fmt.money(s.cur)}", style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.width(8.dp))
-                            val prior = s.prior
-                            if (prior != null) {
-                                Text("去年 ${Fmt.money(prior)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline)
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text("💰 ${ym / 100}年${(ym % 100).toString().padStart(2, '0')}月 各院區收入明細",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("近三個月趨勢 ｜ 與去年同期比較", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline)
+                Spacer(Modifier.height(8.dp))
+                stats.forEach { s ->
+                    Card(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text("本月 ${Fmt.money(s.cur)}", style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.width(8.dp))
-                                val deltaPct = s.deltaPct
-                                if (deltaPct != null) {
-                                    val up = deltaPct >= 0
-                                    Text(
-                                        (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", deltaPct),
+                                val prior = s.prior
+                                if (prior != null) {
+                                    Text("去年 ${Fmt.money(prior)}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (up) positiveTextColor() else negativeTextColor()
-                                    )
+                                        color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.width(8.dp))
+                                    val deltaPct = s.deltaPct
+                                    if (deltaPct != null) {
+                                        val up = deltaPct >= 0
+                                        Text(
+                                            (if (up) "▲ " else "▼ ") + String.format("%+.1f%%", deltaPct),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (up) positiveTextColor() else negativeTextColor()
+                                        )
+                                    }
                                 }
                             }
+                            Recent3Line(s.trend, Fmt::money, prefix = "近三個月")
                         }
-                        Recent3Line(s.trend, Fmt::money, prefix = "近三個月")
                     }
                 }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -3336,33 +3422,35 @@ private fun PieZoomLayout(vm: DesktopViewModel, data: PieData) {
         else data.slices.map { DashboardRepo.IncomeSliceStat(it.label, it.value, emptyList(), null, null) }
     val periodNote = periodNoteOf(vm)
 
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        // 左方：各區塊明細
-        Column(
-            Modifier.weight(1.15f).fillMaxHeight()
-                .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+    SelectionContainer {
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("📋 各區塊近三個月趨勢 ＋ 去年同期比較",
-                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            if (periodNote.isNotEmpty()) {
-                Text(periodNote, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
+            // 左方：各區塊明細
+            Column(
+                Modifier.weight(1.15f).fillMaxHeight()
+                    .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("📋 各區塊近三個月趨勢 ＋ 去年同期比較",
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                if (periodNote.isNotEmpty()) {
+                    Text(periodNote, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
+                }
+                items.forEachIndexed { i, s ->
+                    IncomeSliceCard(s, i, total)
+                }
             }
-            items.forEachIndexed { i, s ->
-                IncomeSliceCard(s, i, total)
+            // 右方：圓餅圖
+            Column(
+                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                PieChart(data, height = 150.dp)
             }
-        }
-        // 右方：圓餅圖
-        Column(
-            Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
-                .padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            PieChart(data, height = 150.dp)
         }
     }
 }
@@ -3451,34 +3539,36 @@ fun DataTable(data: TableData, modifier: Modifier = Modifier, onRowClick: ((Int)
     }
     val weightSum = weights.sum().coerceAtLeast(1f)
 
-    Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 6.dp)
-        ) {
-            data.columns.forEachIndexed { ci, c ->
-                Box(Modifier.weight(weights[ci] / weightSum)) {
-                    Text(c, style = headerStyle, modifier = Modifier.padding(horizontal = 6.dp))
+    SelectionContainer {
+        Column(modifier) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant).padding(vertical = 6.dp)
+            ) {
+                data.columns.forEachIndexed { ci, c ->
+                    Box(Modifier.weight(weights[ci] / weightSum)) {
+                        Text(c, style = headerStyle, modifier = Modifier.padding(horizontal = 6.dp))
+                    }
                 }
             }
-        }
-        data.rows.forEachIndexed { ri, row ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 3.dp)
-                    .then(if (onRowClick != null) Modifier.clickable { onRowClick(ri) } else Modifier)
-            ) {
-                row.forEachIndexed { ci, cell ->
-                    val bg = cell.bgArgb
-                    Box(
-                        Modifier.weight(weights[ci] / weightSum)
-                            .clip(RoundedCornerShape(4.dp))
-                            .then(if (bg != null) Modifier.background(Color(bg)) else Modifier)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(cell.text, style = cellStyle,
-                            color = if (bg != null) {
-                                if (Color(bg).luminance() > 0.45f) Color.Black else Color.White
-                            } else MaterialTheme.colorScheme.onSurface)
+            data.rows.forEachIndexed { ri, row ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                        .then(if (onRowClick != null) Modifier.clickable { onRowClick(ri) } else Modifier)
+                ) {
+                    row.forEachIndexed { ci, cell ->
+                        val bg = cell.bgArgb
+                        Box(
+                            Modifier.weight(weights[ci] / weightSum)
+                                .clip(RoundedCornerShape(4.dp))
+                                .then(if (bg != null) Modifier.background(Color(bg)) else Modifier)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(cell.text, style = cellStyle,
+                                color = if (bg != null) {
+                                    if (Color(bg).luminance() > 0.45f) Color.Black else Color.White
+                                } else MaterialTheme.colorScheme.onSurface)
+                        }
                     }
                 }
             }

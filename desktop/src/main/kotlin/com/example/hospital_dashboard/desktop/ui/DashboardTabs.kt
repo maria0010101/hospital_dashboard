@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -380,36 +381,38 @@ private fun FirstVisitSheet(
     val note = if (years.isNotEmpty()) "篩選區間 民國${years.min()}-${years.max()}年 累計" else ""
 
     AdaptiveSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
-        ) {
-            Text("🩺 初診/複診 各院區明細",
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (note.isNotEmpty()) {
-                Text(note, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline)
-            }
-            Spacer(Modifier.height(6.dp))
-            stats?.forEach { s ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.weight(1f).adaptiveMarquee(), maxLines = 1)
-                    Text("初診 ${Fmt.int(s.firstVisit)}",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Spacer(Modifier.width(8.dp))
-                    Text("複診 ${Fmt.int(s.returnVisit)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline, maxLines = 1)
-                    Spacer(Modifier.width(8.dp))
-                    Text("初診率 ${String.format("%.1f%%", s.firstRate)}",
-                        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary, maxLines = 1)
+        SelectionContainer {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
+            ) {
+                Text("🩺 初診/複診 各院區明細",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (note.isNotEmpty()) {
+                    Text(note, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline)
                 }
+                Spacer(Modifier.height(6.dp))
+                stats?.forEach { s ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🏢 ${s.branch}", style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f).adaptiveMarquee(), maxLines = 1)
+                        Text("初診 ${Fmt.int(s.firstVisit)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("複診 ${Fmt.int(s.returnVisit)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                        Spacer(Modifier.width(8.dp))
+                        Text("初診率 ${String.format("%.1f%%", s.firstRate)}",
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -912,78 +915,80 @@ fun BedCategoryHeatCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    campusTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).adaptiveMarquee(),
-                    maxLines = 1
-                )
-                if (ymStr.isNotEmpty()) {
-                    Spacer(Modifier.width(6.dp))
+        SelectionContainer {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        ymStr,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        campusTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f).adaptiveMarquee(),
                         maxLines = 1
                     )
+                    if (ymStr.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            ymStr,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
                 }
-            }
-            Text(
-                "💡 點擊病床類別可查看各護理站佔床率明細",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(Modifier.height(8.dp))
+                Text(
+                    "💡 點擊病床類別可查看各護理站佔床率明細",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
 
-            if (heatmap.categories.isEmpty()) {
-                EmptyHint("📭 無病床類別資料")
-            } else {
-                val rows = heatmap.categories.chunked(2)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rows.forEach { rowPairs ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            rowPairs.forEach { (cat, rate) ->
-                                val bgArgb = vm.repo.occupancyColor(rate)
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(bgArgb))
-                                        .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke(cat) }
-                                        .padding(horizontal = 8.dp, vertical = 7.dp)
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                if (heatmap.categories.isEmpty()) {
+                    EmptyHint("📭 無病床類別資料")
+                } else {
+                    val rows = heatmap.categories.chunked(2)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rows.forEach { rowPairs ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowPairs.forEach { (cat, rate) ->
+                                    val bgArgb = vm.repo.occupancyColor(rate)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(bgArgb))
+                                            .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke(cat) }
+                                            .padding(horizontal = 8.dp, vertical = 7.dp)
                                     ) {
-                                        Text(
-                                            cat,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.Black,
-                                            modifier = Modifier.weight(1f).adaptiveMarquee(),
-                                            maxLines = 1
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(
-                                            String.format("%.1f%%", rate),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Black,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                cat,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.Black,
+                                                modifier = Modifier.weight(1f).adaptiveMarquee(),
+                                                maxLines = 1
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                String.format("%.1f%%", rate),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            if (rowPairs.size == 1) {
-                                Spacer(Modifier.weight(1f))
+                                if (rowPairs.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -1015,12 +1020,13 @@ fun BedStationOccSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
-                .padding(horizontal = 16.dp)
-        ) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .padding(horizontal = 16.dp)
+            ) {
             Text(
                 "🛏️ $titleBranch · $category 護理站佔床率明細",
                 style = MaterialTheme.typography.titleMedium,
@@ -1102,6 +1108,7 @@ fun BedStationOccSheet(
         }
     }
 }
+}
 
 /** 院區差額病床實際佔床率熱力圖卡片 */
 @Composable
@@ -1119,78 +1126,80 @@ fun DiffBedCategoryHeatCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    campusTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).adaptiveMarquee(),
-                    maxLines = 1
-                )
-                if (ymStr.isNotEmpty()) {
-                    Spacer(Modifier.width(6.dp))
+        SelectionContainer {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        ymStr,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        campusTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f).adaptiveMarquee(),
                         maxLines = 1
                     )
+                    if (ymStr.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            ymStr,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1
+                        )
+                    }
                 }
-            }
-            Text(
-                "💡 點擊病床可查看各護理站佔床率明細",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(Modifier.height(8.dp))
+                Text(
+                    "💡 點擊病床可查看各護理站佔床率明細",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
 
-            if (heatmap.categories.isEmpty()) {
-                EmptyHint("📭 無差額病床資料")
-            } else {
-                val rows = heatmap.categories.chunked(2)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    rows.forEach { rowPairs ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            rowPairs.forEach { (cat, rate) ->
-                                val bgArgb = vm.repo.occupancyColor(rate)
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(bgArgb))
-                                        .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke(cat) }
-                                        .padding(horizontal = 8.dp, vertical = 7.dp)
-                                ) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                if (heatmap.categories.isEmpty()) {
+                    EmptyHint("📭 無差額病床資料")
+                } else {
+                    val rows = heatmap.categories.chunked(2)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rows.forEach { rowPairs ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowPairs.forEach { (cat, rate) ->
+                                    val bgArgb = vm.repo.occupancyColor(rate)
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(bgArgb))
+                                            .clickable(enabled = onCategoryClick != null) { onCategoryClick?.invoke(cat) }
+                                            .padding(horizontal = 8.dp, vertical = 7.dp)
                                     ) {
-                                        Text(
-                                            cat,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.Black,
-                                            modifier = Modifier.weight(1f).adaptiveMarquee(),
-                                            maxLines = 1
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(
-                                            String.format("%.1f%%", rate),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Black,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                cat,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.Black,
+                                                modifier = Modifier.weight(1f).adaptiveMarquee(),
+                                                maxLines = 1
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                String.format("%.1f%%", rate),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            if (rowPairs.size == 1) {
-                                Spacer(Modifier.weight(1f))
+                                if (rowPairs.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -1222,88 +1231,90 @@ fun DiffBedStationOccSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
-                .padding(horizontal = 16.dp)
-        ) {
-            Text(
-                "🛏️ $titleBranch · $category 差額病床護理站佔床率明細",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            if (ymStr.isNotEmpty()) {
+        SelectionContainer {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .padding(horizontal = 16.dp)
+            ) {
                 Text(
-                    "最新年月：$ymStr",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
+                    "🛏️ $titleBranch · $category 差額病床護理站佔床率明細",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
-            }
-            Spacer(Modifier.height(10.dp))
-
-            if (stations == null) {
-                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                if (ymStr.isNotEmpty()) {
+                    Text(
+                        "最新年月：$ymStr",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
-            } else if (stations.isEmpty()) {
-                EmptyHint("📭 無護理站佔床率資料")
-            } else {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    stations.forEach { st ->
-                        val bgArgb = st.occupancyRate?.let { vm.repo.occupancyColor(it) } ?: 0xFFE0E0E0L
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Row(
-                                Modifier
+                Spacer(Modifier.height(10.dp))
+
+                if (stations == null) {
+                    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                } else if (stations.isEmpty()) {
+                    EmptyHint("📭 無護理站佔床率資料")
+                } else {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        stations.forEach { st ->
+                            val bgArgb = st.occupancyRate?.let { vm.repo.occupancyColor(it) } ?: 0xFFE0E0E0L
+                            Card(
+                                modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
                             ) {
-                                Column(Modifier.weight(1f)) {
-                                    val stationLabel = if (branch == "全院") "${st.branch} · ${st.nursingStation}" else st.nursingStation
-                                    Text(
-                                        stationLabel,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(Modifier.height(3.dp))
-                                    Text(
-                                        "住院人日 ${st.inpatientDays.toInt()} / 實開床天數 ${st.openBedDays.toInt()}" +
-                                            if (st.registeredBeds > 0 || st.openBeds > 0) " (實開床數 ${st.openBeds.toInt()} / 登記床數 ${st.registeredBeds.toInt()})" else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(bgArgb))
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        st.occupancyRate?.let { String.format("%.1f%%", it) } ?: "-",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        val stationLabel = if (branch == "全院") "${st.branch} · ${st.nursingStation}" else st.nursingStation
+                                        Text(
+                                            stationLabel,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.height(3.dp))
+                                        Text(
+                                            "住院人日 ${st.inpatientDays.toInt()} / 實開床天數 ${st.openBedDays.toInt()}" +
+                                                if (st.registeredBeds > 0 || st.openBeds > 0) " (實開床數 ${st.openBeds.toInt()} / 登記床數 ${st.registeredBeds.toInt()})" else "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(bgArgb))
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            st.occupancyRate?.let { String.format("%.1f%%", it) } ?: "-",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Black
+                                        )
+                                    }
                                 }
                             }
                         }
+                        Spacer(Modifier.height(28.dp))
                     }
-                    Spacer(Modifier.height(28.dp))
                 }
             }
         }
@@ -1313,12 +1324,14 @@ fun DiffBedStationOccSheet(
 @Composable
 private fun WideTable(data: TableData) {
     val size = currentAdaptiveSize()
-    if (size.isCompact) {
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            DataTable(data, Modifier.width(720.dp))
+    SelectionContainer {
+        if (size.isCompact) {
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                DataTable(data, Modifier.width(720.dp))
+            }
+        } else {
+            DataTable(data, Modifier.fillMaxWidth())
         }
-    } else {
-        DataTable(data, Modifier.fillMaxWidth())
     }
 }
 
